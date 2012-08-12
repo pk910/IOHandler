@@ -21,10 +21,12 @@
 static IOHANDLER_CALLBACK(io_callback);
 static IOHANDLER_LOG_BACKEND(io_log);
 
+static struct IODescriptor *irc_iofd = NULL;
+
 int main(int argc, char *argv[]) {
     iolog_backend = io_log;
     
-    iohandler_connect("pk910.de", 6667, 0, NULL, io_callback);
+    irc_iofd = iohandler_connect("pk910.de", 6667, 0, NULL, io_callback);
     
     struct IODescriptor *iofd;
     iofd = iohandler_add(0, IOTYPE_STDIN, NULL, io_callback);
@@ -40,14 +42,22 @@ static IOHANDLER_CALLBACK(io_callback) {
         case IOEVENT_CONNECTED:
             printf("[connect]\n");
             break;
-        case IOEVENT_RECV:
-            printf("[in] %s\n", event->data.recv_str);
+        case IOEVENT_CLOSED:
+            printf("[disconnect]\n");
             break;
+        case IOEVENT_RECV:
+            if(event->iofd->type == IOTYPE_STDIN) {
+                iohandler_printf(irc_iofd, "%s\n", event->data.recv_str);
+                printf("[out] %s\n", event->data.recv_str);
+            } else
+                printf("[in] %s\n", event->data.recv_str);
+            break;
+        
         default:
             break;
     }
 }
 
 static IOHANDLER_LOG_BACKEND(io_log) {
-    printf("%s\n", line);
+    //printf("%s", line);
 }
