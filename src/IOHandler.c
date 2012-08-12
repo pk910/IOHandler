@@ -61,6 +61,7 @@ void iohandler_log(enum IOLogType type, char *text, ...) {
 extern struct IOEngine engine_select; /* select system call (should always be useable) */
 extern struct IOEngine engine_kevent;
 extern struct IOEngine engine_epoll;
+extern struct IOEngine engine_win32;
 
 struct IOEngine *engine = NULL;
 
@@ -71,6 +72,8 @@ static void iohandler_init_engine() {
         engine = &engine_kevent;
     if(!engine && engine_epoll.init && engine_epoll.init())
         engine = &engine_epoll;
+    if(!engine && engine_win32.init && engine_win32.init())
+        engine = &engine_win32;
     
     if (!engine) {
         if(engine_select.init())
@@ -82,14 +85,6 @@ static void iohandler_init_engine() {
     }
     iohandler_log(IOLOG_DEBUG, "using %s IO engine", engine->name);
     iohandler_ssl_init();
-    #ifdef WIN32
-    WSADATA wsadata;
-    // Start Windows Sockets.
-    if (WSAStartup(MAKEWORD(2, 0), &wsadata)) {
-        iohandler_log(IOLOG_FATAL, "Unable to start Windows Sockets");
-        return;
-    }
-    #endif
 }
 
 static void iohandler_append(struct IODescriptor *descriptor) {

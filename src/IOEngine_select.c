@@ -15,12 +15,12 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>. 
  */
 #include "IOEngine.h"
+#include <errno.h>
 #ifdef WIN32
 #define _WIN32_WINNT 0x501
 #include <windows.h>
 #include <winsock2.h>
 #else
-#include <errno.h>
 #include <string.h>
 #include <stdio.h>
 #endif
