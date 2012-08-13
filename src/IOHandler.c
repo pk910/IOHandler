@@ -41,6 +41,11 @@ iohandler_log_callback *iolog_backend = NULL;
 struct IODescriptor *first_descriptor = NULL;
 struct IODescriptor *timer_priority = NULL;
 
+#ifdef HAVE_PTHREAD_H
+static pthread_mutex_t io_thread_sync;
+static pthread_mutex_t io_poll_sync;
+#endif
+
 void iohandler_log(enum IOLogType type, char *text, ...) {
     va_list arg_list;
     char logBuf[MAXLOG+1];
@@ -67,6 +72,9 @@ struct IOEngine *engine = NULL;
 
 static void iohandler_init_engine() {
     if(engine) return;
+    IOTHREAD_MUTEX_INIT(io_thread_sync);
+    IOTHREAD_MUTEX_INIT(io_poll_sync);
+    
     //try other engines
     if(!engine && engine_kevent.init && engine_kevent.init())
         engine = &engine_kevent;
@@ -88,6 +96,7 @@ static void iohandler_init_engine() {
 }
 
 static void iohandler_append(struct IODescriptor *descriptor) {
+    IOSYNCHRONIZE(io_thread_sync);
     struct timeval *timeout = ((descriptor->timeout.tv_sec || descriptor->timeout.tv_usec) ? &descriptor->timeout : NULL);
     if(timeout) {
         struct IODescriptor *iofd;
@@ -134,10 +143,12 @@ static void iohandler_append(struct IODescriptor *descriptor) {
             first_descriptor->prev = descriptor;
         first_descriptor = descriptor;
     }
+    IODESYNCHRONIZE(io_thread_sync);
 }
 
 static void iohandler_remove(struct IODescriptor *descriptor, int engine_remove) {
     //remove IODescriptor from the list
+    IOSYNCHRONIZE(io_thread_sync);
     if(descriptor->prev)
         descriptor->prev->next = descriptor->next;
     else
@@ -155,6 +166,7 @@ static void iohandler_remove(struct IODescriptor *descriptor, int engine_remove)
         free(descriptor->writebuf.buffer);
     iohandler_log(IOLOG_DEBUG, "removed IODescriptor (%d) of type `%s`", descriptor->fd, iohandler_iotype_name(descriptor->type));
     free(descriptor);
+    IODESYNCHRONIZE(io_thread_sync);
 }
 
 struct IODescriptor *iohandler_add(int sockfd, enum IOType type, struct timeval *timeout, iohandler_callback *callback) {
@@ -658,10 +670,12 @@ void iohandler_events(struct IODescriptor *iofd, int readable, int writeable) {
 
 void iohandler_poll() {
     if(engine) {
+        IOSYNCHRONIZE(io_poll_sync); //quite senceless multithread support... better support will follow
         struct timeval timeout;
         timeout.tv_sec = IO_MAX_TIMEOUT;
         timeout.tv_usec = 0;
         engine->loop(&timeout);
+        IODESYNCHRONIZE(io_poll_sync);
     }
 }
 

@@ -18,6 +18,22 @@
 #define _IOEngine_h
 #include "IOHandler.h"
 
+#ifdef HAVE_PTHREAD_H
+#include <pthread.h>
+#define IOTHREAD_MUTEX_INIT(var) { \
+    pthread_mutexattr_t mutex_attr; \
+    pthread_mutexattr_init(&mutex_attr);\
+    pthread_mutexattr_settype(&mutex_attr, PTHREAD_MUTEX_RECURSIVE_NP);\
+    pthread_mutex_init(&var, &mutex_attr); \
+}
+#define IOSYNCHRONIZE(var) pthread_mutex_lock(&var)
+#define IODESYNCHRONIZE(var) pthread_mutex_unlock(&var)
+#else
+#define IOTHREAD_MUTEX_INIT(var)
+#define IOSYNCHRONIZE(var)
+#define IODESYNCHRONIZE(var)
+#endif
+
 struct IODescriptor;
 enum IOType;
 enum IOStatus;
