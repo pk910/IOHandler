@@ -55,6 +55,10 @@ static void engine_epoll_remove(struct IODescriptor *iofd) {
 
 static void engine_epoll_update(struct IODescriptor *iofd) {
     if(iofd->type == IOTYPE_TIMER) return;
+    if(iofd->state == IO_CLOSED) {
+        engine_epoll_remove(iofd);
+        return;
+    }
     struct epoll_event evt;
     int res;
 

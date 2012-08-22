@@ -99,6 +99,8 @@ static void engine_select_loop(struct timeval *timeout) {
             #endif
         }
         else if(iofd->type == IOTYPE_SERVER || iofd->type == IOTYPE_CLIENT) {
+            if(iofd->state == IO_CLOSED) 
+                continue;
             if(iofd->fd > fds_size)
                 fds_size = iofd->fd;
             FD_SET(iofd->fd, &read_fds);

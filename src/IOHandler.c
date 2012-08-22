@@ -553,6 +553,7 @@ void iohandler_events(struct IODescriptor *iofd, int readable, int writeable) {
             if(!readable && !writeable) {
                 callback_event.type = IOEVENT_SSLFAILED;
                 iofd->state = IO_CLOSED;
+                engine->update(iofd);
             } else {
                 iohandler_log(IOLOG_DEBUG, "triggering iohandler_ssl_client_handshake for %s (fd: %d)", iohandler_iotype_name(iofd->type), iofd->fd);
                 iohandler_ssl_client_handshake(iofd);
