@@ -111,9 +111,9 @@ static void iohandler_append(struct IODescriptor *descriptor) {
                 if(timeval_is_smaler(timeout, (&iofd->timeout))) {
                     descriptor->prev = iofd->prev;
                     descriptor->next = iofd;
-                    iofd->prev = descriptor;
                     if(iofd->prev)
                         iofd->prev->next = descriptor;
+                    iofd->prev = descriptor;
                     if(set_priority)
                         timer_priority = descriptor;
                     break;
