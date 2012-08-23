@@ -26,6 +26,7 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #else
+#include <signal.h>
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
@@ -33,6 +34,10 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
+#endif
+
+#ifndef EWOULDBLOCK
+#define EWOULDBLOCK EAGAIN
 #endif
 
 #define MAXLOG 1024
@@ -339,8 +344,19 @@ struct IODescriptor *iohandler_connect(const char *hostname, unsigned int port, 
         dstaddrlen = sizeof(*ip4);
     } else
         return NULL;
+    //prevent SIGPIPE
+    #ifndef WIN32
+    #if defined(SO_NOSIGPIPE)
+    {
+        int set = 1;
+        setsockopt(sockfd, SOL_SOCKET, SO_NOSIGPIPE, (void *)&set, sizeof(int));
+    }
+    #else
+    signal(SIGPIPE, SIG_IGN);
+    #endif
+    #endif
     //make sockfd unblocking
-#if defined(F_GETFL)
+    #if defined(F_GETFL)
     {
         int flags;
         flags = fcntl(sockfd, F_GETFL);
@@ -348,11 +364,11 @@ struct IODescriptor *iohandler_connect(const char *hostname, unsigned int port, 
         flags = fcntl(sockfd, F_GETFD);
         fcntl(sockfd, F_SETFD, flags|FD_CLOEXEC);
     }
-#else
+    #else
     /* I hope you're using the Win32 backend or something else that
      * automatically marks the file descriptor non-blocking...
      */
-#endif
+    #endif
     descriptor = iohandler_add(sockfd, IOTYPE_CLIENT, NULL, callback);
     if(!descriptor) {
         close(sockfd);
@@ -423,8 +439,19 @@ struct IODescriptor *iohandler_listen(const char *hostname, unsigned int port, i
         bind(sockfd, (struct sockaddr*)ip4, sizeof(*ip4));
     } else
         return NULL;
+    //prevent SIGPIPE
+    #ifndef WIN32
+    #if defined(SO_NOSIGPIPE)
+    {
+        int set = 1;
+        setsockopt(sockfd, SOL_SOCKET, SO_NOSIGPIPE, (void *)&set, sizeof(int));
+    }
+    #else
+    signal(SIGPIPE, SIG_IGN);
+    #endif
+    #endif
     //make sockfd unblocking
-#if defined(F_GETFL)
+    #if defined(F_GETFL)
     {
         int flags;
         flags = fcntl(sockfd, F_GETFL);
@@ -432,11 +459,11 @@ struct IODescriptor *iohandler_listen(const char *hostname, unsigned int port, i
         flags = fcntl(sockfd, F_GETFD);
         fcntl(sockfd, F_SETFD, flags|FD_CLOEXEC);
     }
-#else
+    #else
     /* I hope you're using the Win32 backend or something else that
      * automatically marks the file descriptor non-blocking...
      */
-#endif
+    #endif
     descriptor = iohandler_add(sockfd, IOTYPE_SERVER, NULL, callback);
     if(!descriptor) {
         close(sockfd);
@@ -487,8 +514,8 @@ void iohandler_printf(struct IODescriptor *iofd, const char *text, ...) {
     iohandler_send(iofd, sendBuf, pos+1);
 }
 
-void iohandler_try_write(struct IODescriptor *iofd) {
-    if(!iofd->writebuf.bufpos) return;
+static int iohandler_try_write(struct IODescriptor *iofd) {
+    if(!iofd->writebuf.bufpos) return 0;
     iohandler_log(IOLOG_DEBUG, "write writebuf (%d bytes) to socket (fd: %d)", iofd->writebuf.bufpos, iofd->fd);
     int res;
     if(iofd->ssl_active)
@@ -496,14 +523,16 @@ void iohandler_try_write(struct IODescriptor *iofd) {
     else
         res = send(iofd->fd, iofd->writebuf.buffer, iofd->writebuf.bufpos, 0);
     if(res < 0) {
-        if (errno != EAGAIN) {
+        if (errno != EAGAIN && errno != EWOULDBLOCK)
             iohandler_log(IOLOG_ERROR, "could not write to socket (fd: %d): %d - %s", iofd->fd, errno, strerror(errno));
-        }
+        else
+            res = 0;
     } else {
         iofd->writebuf.bufpos -= res;
         if(iofd->state != IO_CLOSED)
             engine->update(iofd);
     }
+    return res;
 }
 
 void iohandler_close(struct IODescriptor *iofd) {
@@ -610,7 +639,7 @@ void iohandler_events(struct IODescriptor *iofd, int readable, int writeable) {
                             bytes = recv(iofd->fd, iofd->readbuf.buffer + iofd->readbuf.bufpos, iofd->readbuf.buflen - iofd->readbuf.bufpos, 0);
                     }
                     if(bytes <= 0) {
-                        if (errno != EAGAIN) {
+                        if (errno != EAGAIN || errno != EWOULDBLOCK) {
                             iofd->state = IO_CLOSED;
 							engine->update(iofd);
                             callback_event.type = IOEVENT_CLOSED;
@@ -659,7 +688,14 @@ void iohandler_events(struct IODescriptor *iofd, int readable, int writeable) {
                     callback_event.type = IOEVENT_READABLE;
             }
             if(writeable) {
-                iohandler_try_write(iofd);
+                int bytes;
+                bytes = iohandler_try_write(iofd);
+                if(bytes < 0) {
+                    iofd->state = IO_CLOSED;
+                    engine->update(iofd);
+                    callback_event.type = IOEVENT_CLOSED;
+                    callback_event.data.errid = errno;
+                }
             }
             break;
     }
