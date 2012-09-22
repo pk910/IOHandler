@@ -18,6 +18,7 @@
 
 #ifdef HAVE_SYS_EVENT_H
 #include <sys/event.h>
+#include <errno.h>
 
 #define MAX_EVENTS 32
 
@@ -44,7 +45,6 @@ static void engine_kevent_add(struct IODescriptor *iofd) {
     res = kevent(kevent_fd, changes, nchanges, NULL, 0, NULL);
     if(res < 0)
         iohandler_log(IOLOG_ERROR, "could not add IODescriptor %d to kevent queue. (returned: %d)", res);
-    }
 }
 
 static void engine_kevent_remove(struct IODescriptor *iofd) {
@@ -77,11 +77,10 @@ static void engine_kevent_update(struct IODescriptor *iofd) {
 }
 
 static void engine_kevent_loop(struct timeval *timeout) {
-    struct kevent evts[MAX_EVENTS];
+    struct kevent events[MAX_EVENTS];
     struct timeval now, tdiff;
-    struct timespec ts, *ptr
+    struct timespec ts, *pts;
     int msec;
-    int events;
     int kevent_result;
     
     gettimeofday(&now, NULL);
@@ -113,7 +112,7 @@ static void engine_kevent_loop(struct timeval *timeout) {
     }
     
     //select system call
-    kevent_result = kevent(kq_fd, NULL, 0, events, MAX_EVENTS, pts);
+    kevent_result = kevent(kevent_fd, NULL, 0, events, MAX_EVENTS, pts);
     
     if (kevent_result < 0) {
         if (errno != EINTR) {
@@ -123,7 +122,7 @@ static void engine_kevent_loop(struct timeval *timeout) {
     } else {
         int i;
         for(i = 0; i < kevent_result; i++)
-            iohandler_events(evts[i].udata, (evts[i].filter == EVFILT_READ), (evts[i].filter == EVFILT_WRITE));
+            iohandler_events(events[i].udata, (events[i].filter == EVFILT_READ), (events[i].filter == EVFILT_WRITE));
     }
     
     //check timers
