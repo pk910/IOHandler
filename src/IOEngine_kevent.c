@@ -60,7 +60,7 @@ static void engine_kevent_remove(struct IODescriptor *iofd) {
 static void engine_kevent_update(struct IODescriptor *iofd) {
     if(iofd->type == IOTYPE_TIMER) return;
     if(iofd->state == IO_CLOSED) {
-        engine_epoll_remove(iofd);
+        engine_kevent_remove(iofd);
         return;
     }
     struct kevent changes[2];
