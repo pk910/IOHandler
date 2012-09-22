@@ -20,10 +20,15 @@
 
 #ifdef HAVE_PTHREAD_H
 #include <pthread.h>
+#ifdef PTHREAD_MUTEX_RECURSIVE_NP
+#define PTHREAD_MUTEX_RECURSIVE_VAL PTHREAD_MUTEX_RECURSIVE_NP
+#else
+#define PTHREAD_MUTEX_RECURSIVE_VAL PTHREAD_MUTEX_RECURSIVE
+#endif
 #define IOTHREAD_MUTEX_INIT(var) { \
     pthread_mutexattr_t mutex_attr; \
     pthread_mutexattr_init(&mutex_attr);\
-    pthread_mutexattr_settype(&mutex_attr, PTHREAD_MUTEX_RECURSIVE_NP);\
+    pthread_mutexattr_settype(&mutex_attr, PTHREAD_MUTEX_RECURSIVE_VAL);\
     pthread_mutex_init(&var, &mutex_attr); \
 }
 #define IOSYNCHRONIZE(var) pthread_mutex_lock(&var)
