@@ -117,5 +117,6 @@ void iohandler_update(struct IODescriptor *iofd);
 void iohandler_set_timeout(struct IODescriptor *iofd, struct timeval *timeout);
 
 void iohandler_poll();
+void iohandler_poll_timeout(struct timeval timeout);
 
 #endif

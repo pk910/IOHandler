@@ -706,11 +706,15 @@ void iohandler_events(struct IODescriptor *iofd, int readable, int writeable) {
 }
 
 void iohandler_poll() {
+    struct timeval timeout;
+    timeout.tv_sec = IO_MAX_TIMEOUT;
+    timeout.tv_usec = 0;
+    iohandler_poll_timeout(timeout);
+}
+
+void iohandler_poll_timeout(struct timeval timeout) {
     if(engine) {
         IOSYNCHRONIZE(io_poll_sync); //quite senceless multithread support... better support will follow
-        struct timeval timeout;
-        timeout.tv_sec = IO_MAX_TIMEOUT;
-        timeout.tv_usec = 0;
         engine->loop(&timeout);
         IODESYNCHRONIZE(io_poll_sync);
     }
