@@ -1,7 +1,7 @@
 
 CC      = gcc
-CFLAGS  = -g -O0 -Wall -Wshadow -Werror
-LDFLAGS = -lws2_32
+CFLAGS  = -g -O0 -Wall -Wshadow -Werror -DHAVE_PTHREAD_H
+LDFLAGS = -lws2_32 -lpthread
 
 OBJ     = ../IOEngine_epoll.o ../IOEngine_kevent.o ../IOEngine_select.o ../IOEngine_win32.o ../IOHandler.o ../IOHandler_SSL.o iotest.o
 

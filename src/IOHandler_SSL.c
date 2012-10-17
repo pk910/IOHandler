@@ -20,22 +20,40 @@
 void iohandler_ssl_init() {
 #ifdef HAVE_SSL
     SSL_library_init();
+    OpenSSL_add_all_algorithms(); /* load & register all cryptos, etc. */
     SSL_load_error_strings();
 #endif
+}
+
+static void iohandler_ssl_error() {
+    unsigned long e;
+    while((e = ERR_get_error())) {
+        iohandler_log(IOLOG_ERROR, "SSLv23 ERROR %lu: %s", e, ERR_error_string(e, NULL));
+    }
 }
 
 void iohandler_ssl_connect(struct IODescriptor *iofd) {
 #ifdef HAVE_SSL
     iofd->state = IO_SSLWAIT;
+    iofd->ssl_server_hs = 0;
     struct IOSSLNode *sslnode = malloc(sizeof(*sslnode));
     sslnode->sslContext = SSL_CTX_new(SSLv23_client_method());
-    if(!sslnode->sslContext)
+    if(!sslnode->sslContext) {
+        iohandler_ssl_error();
+        iohandler_log(IOLOG_ERROR, "SSL: could not create client SSL CTX");
         goto ssl_connect_err;
+    }
     sslnode->sslHandle = SSL_new(sslnode->sslContext);
-    if(!sslnode->sslHandle) 
+    if(!sslnode->sslHandle) {
+        iohandler_ssl_error();
+        iohandler_log(IOLOG_ERROR, "SSL: could not create client SSL Handle");
         goto ssl_connect_err;
-    if(!SSL_set_fd(sslnode->sslHandle, iofd->fd))
+    }
+    if(!SSL_set_fd(sslnode->sslHandle, iofd->fd)) {
+        iohandler_ssl_error();
+        iohandler_log(IOLOG_ERROR, "SSL: could not set client fd in SSL Handle");
         goto ssl_connect_err;
+    }
     SSL_set_connect_state(sslnode->sslHandle);
     iofd->sslnode = sslnode;
     iohandler_ssl_client_handshake(iofd);
@@ -46,10 +64,102 @@ ssl_connect_err:
 #endif    
 }
 
+void iohandler_ssl_listen(struct IODescriptor *iofd, const char *certfile, const char *keyfile) {
+#ifdef HAVE_SSL
+    struct IOSSLNode *sslnode = malloc(sizeof(*sslnode));
+    sslnode->sslContext = SSL_CTX_new(SSLv23_server_method());
+    if(!sslnode->sslContext) {
+        iohandler_ssl_error();
+        iohandler_log(IOLOG_ERROR, "SSL: could not create server SSL CTX");
+        goto ssl_listen_err;
+    }
+    /* load certificate */
+    if(SSL_CTX_use_certificate_file(sslnode->sslContext, certfile, SSL_FILETYPE_PEM) <= 0) {
+        iohandler_ssl_error();
+        iohandler_log(IOLOG_ERROR, "SSL: could not load server certificate (%s)", certfile);
+        goto ssl_listen_err;
+    }
+    /* load keyfile */
+    if(SSL_CTX_use_PrivateKey_file(sslnode->sslContext, keyfile, SSL_FILETYPE_PEM) <= 0) {
+        iohandler_ssl_error();
+        iohandler_log(IOLOG_ERROR, "SSL: could not load server keyfile (%s)", keyfile);
+        goto ssl_listen_err;
+    }
+    /* check certificate and keyfile */
+    if(!SSL_CTX_check_private_key(sslnode->sslContext)) {
+        iohandler_ssl_error();
+        iohandler_log(IOLOG_ERROR, "SSL: server certificate (%s) and keyfile (%s) doesn't match!", certfile, keyfile);
+        goto ssl_listen_err;
+    }
+    iofd->sslnode = sslnode;
+    return;
+ssl_listen_err:
+    free(sslnode);
+    iofd->sslnode = NULL;
+    iohandler_events(iofd, 0, 0);
+#endif    
+}
+
 void iohandler_ssl_client_handshake(struct IODescriptor *iofd) {
 #ifdef HAVE_SSL
     // Perform an SSL handshake.
     int ret = SSL_do_handshake(iofd->sslnode->sslHandle);
+    iofd->ssl_hs_read = 0;
+    iofd->ssl_hs_write = 0;
+    switch(SSL_get_error(iofd->sslnode->sslHandle, ret)) {
+        case SSL_ERROR_NONE:
+            iofd->state = IO_CONNECTING;
+            iofd->ssl_active = 1;
+            iohandler_log(IOLOG_DEBUG, "SSL handshake for %s (fd: %d) successful", iohandler_iotype_name(iofd->type), iofd->fd);
+            iohandler_events(iofd, 0, 1); //perform IOEVENT_CONNECTED event
+            break;
+        case SSL_ERROR_WANT_READ:
+            iofd->ssl_hs_read = 1;
+            iohandler_log(IOLOG_DEBUG, "SSL_do_handshake for %s (fd: %d) returned SSL_ERROR_WANT_READ", iohandler_iotype_name(iofd->type), iofd->fd);
+            break;
+        case SSL_ERROR_WANT_WRITE:
+            iofd->ssl_hs_write = 1;
+            iohandler_log(IOLOG_DEBUG, "SSL_do_handshake for %s (fd: %d) returned SSL_ERROR_WANT_WRITE", iohandler_iotype_name(iofd->type), iofd->fd);
+            break;
+        default:
+            iohandler_log(IOLOG_ERROR, "SSL_do_handshake for %s (fd: %d) failed with ", iohandler_iotype_name(iofd->type), iofd->fd);
+            iohandler_events(iofd, 0, 0);
+            break;
+    }
+#endif
+}
+
+void iohandler_ssl_client_accepted(struct IODescriptor *iofd, struct IODescriptor *client_iofd) {
+#ifdef HAVE_SSL
+    struct IOSSLNode *sslnode = malloc(sizeof(*sslnode));
+    sslnode->sslHandle = SSL_new(sslnode->sslContext);
+    if(!sslnode->sslHandle) {
+        iohandler_ssl_error();
+        iohandler_log(IOLOG_ERROR, "SSL: could not create client SSL Handle");
+        goto ssl_accept_err;
+    }
+    if(!SSL_set_fd(sslnode->sslHandle, client_iofd->fd)) {
+        iohandler_ssl_error();
+        iohandler_log(IOLOG_ERROR, "SSL: could not set client fd in SSL Handle");
+        goto ssl_accept_err;
+    }
+    client_iofd->state = IO_SSLWAIT;
+    client_iofd->ssl_server_hs = 1;
+    client_iofd->ssl = 1;
+    client_iofd->sslnode = sslnode;
+    client_iofd->callback = iofd->callback;
+    client_iofd->data = iofd;
+    return;
+ssl_accept_err:
+    iohandler_close(client_iofd);
+    free(sslnode);
+#endif
+}
+
+void iohandler_ssl_server_handshake(struct IODescriptor *iofd) {
+#ifdef HAVE_SSL
+    // Perform an SSL handshake.
+    int ret = SSL_accept(iofd->sslnode->sslHandle);
     iofd->ssl_hs_read = 0;
     iofd->ssl_hs_write = 0;
     switch(SSL_get_error(iofd->sslnode->sslHandle, ret)) {

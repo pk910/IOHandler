@@ -67,6 +67,7 @@ enum IOEventType {
     IOEVENT_NOTCONNECTED, /* client socket could not connect (errid valid) */
     IOEVENT_CLOSED, /* client socket lost connection (errid valid) */
     IOEVENT_ACCEPT, /* server socket accepted new connection (accept_fd valid) */
+    IOEVENT_SSLACCEPT, /* SSL server socket accepted new connection (accept_iofd valid) */
     IOEVENT_TIMEOUT, /* timer timed out */
     IOEVENT_SSLFAILED /* failed to initialize SSL session */
 };
@@ -87,6 +88,7 @@ struct IODescriptor {
     void *data;
     int read_lines : 1;
     int ssl : 1;
+    int ssl_server_hs : 1;
     int ssl_active : 1;
     int ssl_hs_read : 1;
     int ssl_hs_write : 1;
@@ -102,13 +104,24 @@ struct IOEvent {
         char *recv_str;
         int accept_fd;
         int errid;
+        struct IODescriptor *accept_iofd;
     } data;
 };
+
+#define IOHANDLER_LISTEN_IPV4 0x01
+#define IOHANDLER_LISTEN_IPV6 0x02 /* overrides IOHANDLER_LISTEN_IPV4 */
+
+#define IOHANDLER_CONNECT_IPV4 0x01
+#define IOHANDLER_CONNECT_IPV6 0x02 /* overrides IOHANDLER_CONNECT_IPV4 */
 
 struct IODescriptor *iohandler_add(int sockfd, enum IOType type, struct timeval *timeout, iohandler_callback *callback);
 struct IODescriptor *iohandler_timer(struct timeval timeout, iohandler_callback *callback);
 struct IODescriptor *iohandler_connect(const char *hostname, unsigned int port, int ssl, const char *bind, iohandler_callback *callback);
+struct IODescriptor *iohandler_connect_flags(const char *hostname, unsigned int port, int ssl, const char *bindhost, iohandler_callback *callback, int flags);
 struct IODescriptor *iohandler_listen(const char *hostname, unsigned int port, iohandler_callback *callback);
+struct IODescriptor *iohandler_listen_flags(const char *hostname, unsigned int port, iohandler_callback *callback, int flags);
+struct IODescriptor *iohandler_listen_ssl(const char *hostname, unsigned int port, const char *certfile, const char *keyfile, iohandler_callback *callback);
+struct IODescriptor *iohandler_listen_ssl_flags(const char *hostname, unsigned int port, const char *certfile, const char *keyfile, iohandler_callback *callback, int flags);
 void iohandler_write(struct IODescriptor *iofd, const char *line);
 void iohandler_send(struct IODescriptor *iofd, const char *data, size_t datalen);
 void iohandler_printf(struct IODescriptor *iofd, const char *text, ...);

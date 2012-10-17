@@ -36,7 +36,10 @@ struct IOSSLNode {
 
 void iohandler_ssl_init();
 void iohandler_ssl_connect(struct IODescriptor *iofd);
+void iohandler_ssl_listen(struct IODescriptor *iofd, const char *certfile, const char *keyfile);
 void iohandler_ssl_client_handshake(struct IODescriptor *iofd);
+void iohandler_ssl_client_accepted(struct IODescriptor *iofd, struct IODescriptor *client_iofd);
+void iohandler_ssl_server_handshake(struct IODescriptor *iofd);
 void iohandler_ssl_disconnect(struct IODescriptor *iofd);
 int iohandler_ssl_read(struct IODescriptor *iofd, char *buffer, int len);
 int iohandler_ssl_write(struct IODescriptor *iofd, char *buffer, int len);

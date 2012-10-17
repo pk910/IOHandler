@@ -250,6 +250,10 @@ struct IODescriptor *iohandler_timer(struct timeval timeout, iohandler_callback 
 }
 
 struct IODescriptor *iohandler_connect(const char *hostname, unsigned int port, int ssl, const char *bindhost, iohandler_callback *callback) {
+    return iohandler_connect_flags(hostname, port, ssl, bindhost, callback, IOHANDLER_CONNECT_IPV4 | IOHANDLER_CONNECT_IPV6);
+}
+
+struct IODescriptor *iohandler_connect_flags(const char *hostname, unsigned int port, int ssl, const char *bindhost, iohandler_callback *callback, int flags) {
     //non-blocking connect
     int sockfd, result;
     struct addrinfo hints, *res;
@@ -284,7 +288,7 @@ struct IODescriptor *iohandler_connect(const char *hostname, unsigned int port, 
         freeaddrinfo(res);
     }
     
-    if(ip6) {
+    if(ip6 && (flags & IOHANDLER_CONNECT_IPV6)) {
         sockfd = socket(AF_INET6, SOCK_STREAM, 0);
         if(sockfd == -1) {
             iohandler_log(IOLOG_ERROR, "could not create socket in %s:%d", __FILE__, __LINE__);
@@ -313,7 +317,7 @@ struct IODescriptor *iohandler_connect(const char *hostname, unsigned int port, 
         }
         dstaddr = (struct sockaddr*)ip6;
         dstaddrlen = sizeof(*ip6);
-    } else if(ip4) {
+    } else if(ip4 && (flags & IOHANDLER_CONNECT_IPV4)) {
         sockfd = socket(AF_INET, SOCK_STREAM, 0);
         if(sockfd == -1) {
             iohandler_log(IOLOG_ERROR, "could not create socket in %s:%d", __FILE__, __LINE__);
@@ -384,6 +388,10 @@ struct IODescriptor *iohandler_connect(const char *hostname, unsigned int port, 
 }
 
 struct IODescriptor *iohandler_listen(const char *hostname, unsigned int port, iohandler_callback *callback) {
+    return iohandler_listen_flags(hostname, port, callback, IOHANDLER_LISTEN_IPV4 | IOHANDLER_LISTEN_IPV6);
+}
+
+struct IODescriptor *iohandler_listen_flags(const char *hostname, unsigned int port, iohandler_callback *callback, int flags) {
     int sockfd;
     struct addrinfo hints, *res;
     struct sockaddr_in *ip4 = NULL;
@@ -415,7 +423,7 @@ struct IODescriptor *iohandler_listen(const char *hostname, unsigned int port, i
         freeaddrinfo(res);
     }
     
-    if(ip6) {
+    if(ip6 && (flags & IOHANDLER_LISTEN_IPV6)) {
         sockfd = socket(AF_INET6, SOCK_STREAM, 0);
         if(sockfd == -1) return NULL;
         
@@ -426,7 +434,7 @@ struct IODescriptor *iohandler_listen(const char *hostname, unsigned int port, i
         ip6->sin6_port = htons(port);
         
         bind(sockfd, (struct sockaddr*)ip6, sizeof(*ip6));
-    } else if(ip4) {
+    } else if(ip4 && (flags && IOHANDLER_LISTEN_IPV4)) {
         sockfd = socket(AF_INET, SOCK_STREAM, 0);
         if(sockfd == -1) return NULL;
         
@@ -453,11 +461,11 @@ struct IODescriptor *iohandler_listen(const char *hostname, unsigned int port, i
     //make sockfd unblocking
     #if defined(F_GETFL)
     {
-        int flags;
-        flags = fcntl(sockfd, F_GETFL);
-        fcntl(sockfd, F_SETFL, flags|O_NONBLOCK);
-        flags = fcntl(sockfd, F_GETFD);
-        fcntl(sockfd, F_SETFD, flags|FD_CLOEXEC);
+        int flag;
+        flag = fcntl(sockfd, F_GETFL);
+        fcntl(sockfd, F_SETFL, flag|O_NONBLOCK);
+        flag = fcntl(sockfd, F_GETFD);
+        fcntl(sockfd, F_SETFD, flag|FD_CLOEXEC);
     }
     #else
     /* I hope you're using the Win32 backend or something else that
@@ -473,6 +481,21 @@ struct IODescriptor *iohandler_listen(const char *hostname, unsigned int port, i
     descriptor->state = IO_LISTENING;
     engine->update(descriptor);
     iohandler_log(IOLOG_DEBUG, "added server socket (%d) listening on %s:%d", sockfd, hostname, port);
+    return descriptor;
+}
+
+struct IODescriptor *iohandler_listen_ssl(const char *hostname, unsigned int port, const char *certfile, const char *keyfile, iohandler_callback *callback) {
+    return iohandler_listen_ssl_flags(hostname, port, certfile, keyfile, callback, IOHANDLER_LISTEN_IPV4 | IOHANDLER_LISTEN_IPV6);
+}
+
+struct IODescriptor *iohandler_listen_ssl_flags(const char *hostname, unsigned int port, const char *certfile, const char *keyfile, iohandler_callback *callback, int flags) {
+    struct IODescriptor *descriptor = iohandler_listen_flags(hostname, port, callback, flags);
+    if(!descriptor)
+        return NULL;
+    //SSL Server Socket
+    iohandler_ssl_listen(descriptor, certfile, keyfile);
+    if(descriptor->sslnode)
+        descriptor->ssl = 1;
     return descriptor;
 }
 
@@ -580,9 +603,15 @@ void iohandler_events(struct IODescriptor *iofd, int readable, int writeable) {
     switch(iofd->state) {
         case IO_SSLWAIT:
             if(!readable && !writeable) {
-                callback_event.type = IOEVENT_SSLFAILED;
-                iofd->state = IO_CLOSED;
-                engine->update(iofd);
+                if(!iofd->ssl_server_hs) {
+                    callback_event.type = IOEVENT_SSLFAILED;
+                    iofd->state = IO_CLOSED;
+                    engine->update(iofd);
+                } else
+                    iohandler_close(iofd);
+            } else if(iofd->ssl_server_hs) {
+                iohandler_log(IOLOG_DEBUG, "triggering iohandler_ssl_server_handshake for %s (fd: %d)", iohandler_iotype_name(iofd->type), iofd->fd);
+                iohandler_ssl_server_handshake(iofd);
             } else {
                 iohandler_log(IOLOG_DEBUG, "triggering iohandler_ssl_client_handshake for %s (fd: %d)", iohandler_iotype_name(iofd->type), iofd->fd);
                 iohandler_ssl_client_handshake(iofd);
@@ -597,6 +626,9 @@ void iohandler_events(struct IODescriptor *iofd, int readable, int writeable) {
                 callback_event.data.accept_fd = accept(iofd->fd, NULL, 0);
                 if(callback_event.data.accept_fd < 0) {
                     iohandler_log(IOLOG_ERROR, "could not accept client (server fd: %d): %d - %s", iofd->fd, errno, strerror(errno));
+                } else if(iofd->ssl) {
+                    struct IODescriptor *client_iofd = iohandler_add(callback_event.data.accept_fd, IOTYPE_CLIENT, NULL, NULL);
+                    iohandler_ssl_client_accepted(iofd, client_iofd);
                 } else
                     callback_event.type = IOEVENT_ACCEPT;
             }
@@ -616,7 +648,14 @@ void iohandler_events(struct IODescriptor *iofd, int readable, int writeable) {
                     iohandler_ssl_connect(iofd);
                     return;
                 }
-                callback_event.type = IOEVENT_CONNECTED;
+                if(iofd->ssl && iofd->ssl_server_hs)
+                    callback_event.type = IOEVENT_CONNECTED;
+                else {
+                    callback_event.type = IOEVENT_SSLACCEPT;
+                    callback_event.iofd = iofd->data;
+                    callback_event.data.accept_iofd = iofd;
+                    iofd->data = NULL;
+                }
                 iofd->state = IO_CONNECTED;
                 engine->update(iofd);
             }
