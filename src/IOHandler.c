@@ -648,14 +648,14 @@ void iohandler_events(struct IODescriptor *iofd, int readable, int writeable) {
                     iohandler_ssl_connect(iofd);
                     return;
                 }
-                if(iofd->ssl && iofd->ssl_server_hs)
-                    callback_event.type = IOEVENT_CONNECTED;
-                else {
+                if(iofd->ssl && iofd->ssl_server_hs) {
                     callback_event.type = IOEVENT_SSLACCEPT;
                     callback_event.iofd = iofd->data;
                     callback_event.data.accept_iofd = iofd;
                     iofd->data = NULL;
                 }
+                else 
+                    callback_event.type = IOEVENT_CONNECTED;
                 iofd->state = IO_CONNECTED;
                 engine->update(iofd);
             }
@@ -810,6 +810,8 @@ char *iohandler_ioeventtype_name(enum IOEventType type) {
             return "IOEVENT_CLOSED";
         case IOEVENT_ACCEPT:
             return "IOEVENT_ACCEPT";
+        case IOEVENT_SSLACCEPT:
+            return "IOEVENT_SSLACCEPT";
         case IOEVENT_TIMEOUT:
             return "IOEVENT_TIMEOUT";
         default:
