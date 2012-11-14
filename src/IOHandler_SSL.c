@@ -16,13 +16,12 @@
  */
 #include "IOEngine.h"
 #include "IOHandler_SSL.h"
+#ifdef HAVE_SSL
 
 void iohandler_ssl_init() {
-#ifdef HAVE_SSL
     SSL_library_init();
     OpenSSL_add_all_algorithms(); /* load & register all cryptos, etc. */
     SSL_load_error_strings();
-#endif
 }
 
 static void iohandler_ssl_error() {
@@ -33,7 +32,6 @@ static void iohandler_ssl_error() {
 }
 
 void iohandler_ssl_connect(struct IODescriptor *iofd) {
-#ifdef HAVE_SSL
     iofd->state = IO_SSLWAIT;
     iofd->ssl_server_hs = 0;
     struct IOSSLNode *sslnode = malloc(sizeof(*sslnode));
@@ -61,11 +59,9 @@ void iohandler_ssl_connect(struct IODescriptor *iofd) {
 ssl_connect_err:
     free(sslnode);
     iohandler_events(iofd, 0, 0);
-#endif    
 }
 
 void iohandler_ssl_listen(struct IODescriptor *iofd, const char *certfile, const char *keyfile) {
-#ifdef HAVE_SSL
     struct IOSSLNode *sslnode = malloc(sizeof(*sslnode));
     sslnode->sslContext = SSL_CTX_new(SSLv23_server_method());
     if(!sslnode->sslContext) {
@@ -97,11 +93,9 @@ ssl_listen_err:
     free(sslnode);
     iofd->sslnode = NULL;
     iohandler_events(iofd, 0, 0);
-#endif    
 }
 
 void iohandler_ssl_client_handshake(struct IODescriptor *iofd) {
-#ifdef HAVE_SSL
     // Perform an SSL handshake.
     int ret = SSL_do_handshake(iofd->sslnode->sslHandle);
     iofd->ssl_hs_read = 0;
@@ -126,11 +120,9 @@ void iohandler_ssl_client_handshake(struct IODescriptor *iofd) {
             iohandler_events(iofd, 0, 0);
             break;
     }
-#endif
 }
 
 void iohandler_ssl_client_accepted(struct IODescriptor *iofd, struct IODescriptor *client_iofd) {
-#ifdef HAVE_SSL
     struct IOSSLNode *sslnode = malloc(sizeof(*sslnode));
     sslnode->sslHandle = SSL_new(sslnode->sslContext);
     if(!sslnode->sslHandle) {
@@ -153,11 +145,9 @@ void iohandler_ssl_client_accepted(struct IODescriptor *iofd, struct IODescripto
 ssl_accept_err:
     iohandler_close(client_iofd);
     free(sslnode);
-#endif
 }
 
 void iohandler_ssl_server_handshake(struct IODescriptor *iofd) {
-#ifdef HAVE_SSL
     // Perform an SSL handshake.
     int ret = SSL_accept(iofd->sslnode->sslHandle);
     iofd->ssl_hs_read = 0;
@@ -182,11 +172,9 @@ void iohandler_ssl_server_handshake(struct IODescriptor *iofd) {
             iohandler_events(iofd, 0, 0);
             break;
     }
-#endif
 }
 
 void iohandler_ssl_disconnect(struct IODescriptor *iofd) {
-#ifdef HAVE_SSL
     if(!iofd->sslnode) return;
     SSL_shutdown(iofd->sslnode->sslHandle);
     SSL_free(iofd->sslnode->sslHandle);
@@ -194,11 +182,9 @@ void iohandler_ssl_disconnect(struct IODescriptor *iofd) {
     free(iofd->sslnode);
     iofd->sslnode = NULL;
     iofd->ssl_active = 0;
-#endif
 }
 
 int iohandler_ssl_read(struct IODescriptor *iofd, char *buffer, int len) {
-#ifdef HAVE_SSL
     if(!iofd->sslnode) return 0;
     int ret = SSL_read(iofd->sslnode->sslHandle, buffer, len);
     int update = (iofd->ssl_hs_read || iofd->ssl_hs_write);
@@ -230,12 +216,9 @@ int iohandler_ssl_read(struct IODescriptor *iofd, char *buffer, int len) {
             return -1;
             break;
     }
-#endif
-    return 0;
 }
 
 int iohandler_ssl_write(struct IODescriptor *iofd, char *buffer, int len) {
-#ifdef HAVE_SSL
     if(!iofd->sslnode) return 0;
     int ret = SSL_write(iofd->sslnode->sslHandle, buffer, len);
     int update = (iofd->ssl_hs_read || iofd->ssl_hs_write);
@@ -267,6 +250,18 @@ int iohandler_ssl_write(struct IODescriptor *iofd, char *buffer, int len) {
             return -1;
             break;
     }
-#endif
-    return 0;
 }
+
+#else
+// NULL-backend
+
+void iohandler_ssl_init() {};
+void iohandler_ssl_connect(struct IODescriptor *iofd) {};
+void iohandler_ssl_listen(struct IODescriptor *iofd, const char *certfile, const char *keyfile) {};
+void iohandler_ssl_client_handshake(struct IODescriptor *iofd) {};
+void iohandler_ssl_client_accepted(struct IODescriptor *iofd, struct IODescriptor *client_iofd) {};
+void iohandler_ssl_server_handshake(struct IODescriptor *iofd) {};
+void iohandler_ssl_disconnect(struct IODescriptor *iofd) {};
+int iohandler_ssl_read(struct IODescriptor *iofd, char *buffer, int len) { return 0; };
+int iohandler_ssl_write(struct IODescriptor *iofd, char *buffer, int len) { return 0; };
+#endif
