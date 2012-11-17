@@ -16,6 +16,7 @@
  */
 #include "IOEngine.h"
 #include <errno.h>
+#include <time.h>
 #ifdef WIN32
 #define _WIN32_WINNT 0x501
 #include <windows.h>
@@ -25,8 +26,10 @@
 #include <stdio.h>
 #endif
 
+static int engine_select_timer_delay_fix;
+
 static int engine_select_init() {
-    /* empty */
+    engine_select_timer_delay_fix = 0;
     return 1;
 }
 
@@ -53,6 +56,7 @@ static void engine_select_loop(struct timeval *timeout) {
     struct IODescriptor *iofd, *tmp_iofd;
     struct timeval now, tdiff;
     int select_result;
+    int timer_fix;
     
     gettimeofday(&now, NULL);
     
@@ -60,6 +64,7 @@ static void engine_select_loop(struct timeval *timeout) {
     FD_ZERO(&read_fds);
     FD_ZERO(&write_fds);
     
+    select_result = 0;
     for(iofd = first_descriptor; iofd; iofd = tmp_iofd) {
         tmp_iofd = iofd->next;
         if(iofd->type == IOTYPE_STDIN) {
@@ -96,6 +101,7 @@ static void engine_select_loop(struct timeval *timeout) {
             if(iofd->fd > fds_size)
                 fds_size = iofd->fd;
             FD_SET(iofd->fd, &read_fds);
+            select_result++;
             #endif
         }
         else if(iofd->type == IOTYPE_SERVER || iofd->type == IOTYPE_CLIENT) {
@@ -104,6 +110,7 @@ static void engine_select_loop(struct timeval *timeout) {
             if(iofd->fd > fds_size)
                 fds_size = iofd->fd;
             FD_SET(iofd->fd, &read_fds);
+            select_result++;
             if(iohandler_wants_writes(iofd))
                 FD_SET(iofd->fd, &write_fds);
         }
@@ -122,13 +129,28 @@ static void engine_select_loop(struct timeval *timeout) {
         }
         if(timeval_is_smaler((&tdiff), timeout)) {
             timeout->tv_sec = tdiff.tv_sec;
-            timeout->tv_usec = tdiff.tv_usec;
+            timeout->tv_usec = tdiff.tv_usec + engine_select_timer_delay_fix;
+            if(timeout->tv_usec < 0) {
+                timeout->tv_sec--;
+                timeout->tv_usec += 1000000;
+            }
         }
         break;
     }
     
-    //select system call
-    select_result = select(fds_size + 1, &read_fds, &write_fds, NULL, timeout);
+    if(select_result) {
+        //select system call
+        select_result = select(fds_size + 1, &read_fds, &write_fds, NULL, timeout);
+    } else {
+        #ifdef WIN32
+        Sleep((timeout->tv_sec * 1000) + (timeout->tv_usec / 1000) + 1);
+        #else
+        struct timespec usleep_time;
+        usleep_time.tv_sec = timeout->tv_sec;
+        usleep_time.tv_nsec = timeout->tv_usec * 1000;
+        nanosleep(&usleep_time, NULL);
+        #endif
+    }
     
     if (select_result < 0) {
         if (errno != EINTR) {
@@ -154,7 +176,12 @@ static void engine_select_loop(struct timeval *timeout) {
     while(timer_priority) {
         tdiff.tv_sec = timer_priority->timeout.tv_sec - now.tv_sec;
         tdiff.tv_usec = timer_priority->timeout.tv_usec - now.tv_usec;
-        if(tdiff.tv_sec < 0 || (tdiff.tv_sec == 0 && tdiff.tv_usec <= 0)) {
+        timer_fix = (tdiff.tv_sec * 1000000) + tdiff.tv_usec;
+        if(timer_fix <= 100) {
+            if(timer_fix + 100 < engine_select_timer_delay_fix || timer_fix - 100 > engine_select_timer_delay_fix) {
+                engine_select_timer_delay_fix = ((engine_select_timer_delay_fix * 19) + timer_fix) / 20;
+                iohandler_log(IOLOG_DEBUG, "timer delay fix set to: %d us", engine_select_timer_delay_fix);
+            }
             iohandler_events(timer_priority, 0, 0);
             iohandler_close(timer_priority); //also sets timer_priority to the next timed element
             continue;

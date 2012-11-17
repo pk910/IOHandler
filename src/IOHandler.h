@@ -114,6 +114,10 @@ struct IOEvent {
 #define IOHANDLER_CONNECT_IPV4 0x01
 #define IOHANDLER_CONNECT_IPV6 0x02 /* overrides IOHANDLER_CONNECT_IPV4 */
 
+#define IOHANDLER_SETTING_HIGH_PRECISION_TIMER 0x01
+
+void iohandler_set(int setting, int value);
+
 struct IODescriptor *iohandler_add(int sockfd, enum IOType type, struct timeval *timeout, iohandler_callback *callback);
 struct IODescriptor *iohandler_timer(struct timeval timeout, iohandler_callback *callback);
 struct IODescriptor *iohandler_connect(const char *hostname, unsigned int port, int ssl, const char *bind, iohandler_callback *callback);

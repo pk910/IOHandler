@@ -73,7 +73,15 @@ extern struct IOEngine engine_kevent;
 extern struct IOEngine engine_epoll;
 extern struct IOEngine engine_win32;
 
+int iohandler_settings = 0;
 struct IOEngine *engine = NULL;
+
+void iohandler_set(int setting, int value) {
+    if(value)
+        iohandler_settings |= setting;
+    else
+        iohandler_settings &= ~setting;
+}
 
 static void iohandler_init_engine() {
     if(engine) return;
@@ -81,12 +89,14 @@ static void iohandler_init_engine() {
     IOTHREAD_MUTEX_INIT(io_poll_sync);
     
     //try other engines
-    if(!engine && engine_kevent.init && engine_kevent.init())
-        engine = &engine_kevent;
-    if(!engine && engine_epoll.init && engine_epoll.init())
-        engine = &engine_epoll;
-    if(!engine && engine_win32.init && engine_win32.init())
-        engine = &engine_win32;
+    if(!(iohandler_settings & IOHANDLER_SETTING_HIGH_PRECISION_TIMER)) {
+        if(!engine && engine_kevent.init && engine_kevent.init())
+            engine = &engine_kevent;
+        if(!engine && engine_epoll.init && engine_epoll.init())
+            engine = &engine_epoll;
+        if(!engine && engine_win32.init && engine_win32.init())
+            engine = &engine_win32;
+    }
     
     if (!engine) {
         if(engine_select.init())
@@ -185,8 +195,13 @@ struct IODescriptor *iohandler_add(int sockfd, enum IOType type, struct timeval 
     descriptor->type = type;
     descriptor->state = (type == IOTYPE_STDIN ? IO_CONNECTED : IO_CLOSED);
     descriptor->callback = callback;
-    if(timeout)
+    if(timeout) {
         descriptor->timeout = *timeout;
+        if(descriptor->timeout.tv_usec > 1000000) {
+            descriptor->timeout.tv_usec -= 1000000;
+            descriptor->timeout.tv_sec++;
+        }
+    }
     if(type != IOTYPE_TIMER) {
         descriptor->readbuf.buffer = malloc(IO_READ_BUFLEN + 2);
         descriptor->readbuf.bufpos = 0;
@@ -220,9 +235,13 @@ void iohandler_set_timeout(struct IODescriptor *descriptor, struct timeval *time
         descriptor->next->prev = descriptor->prev;
     if(descriptor == timer_priority)
         timer_priority = descriptor->next;
-    if(timeout) 
+    if(timeout) {
         descriptor->timeout = *timeout;
-    else {
+        if(descriptor->timeout.tv_usec > 1000000) {
+            descriptor->timeout.tv_usec -= 1000000;
+            descriptor->timeout.tv_sec++;
+        }
+    } else {
         descriptor->timeout.tv_sec = 0;
         descriptor->timeout.tv_usec = 0;
     }

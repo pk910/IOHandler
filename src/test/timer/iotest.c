@@ -41,6 +41,8 @@ static void add_timer(int ms) {
 int main(int argc, char *argv[]) {
     iolog_backend = io_log;
     
+    iohandler_set(IOHANDLER_SETTING_HIGH_PRECISION_TIMER, 1);
+    
     gettimeofday(&test_clock1, NULL);
     gettimeofday(&test_clock2, NULL);
     add_timer(TEST_DURATION);
