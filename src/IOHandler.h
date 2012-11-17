@@ -82,6 +82,7 @@ struct IODescriptor {
     enum IOType type;
     enum IOStatus state;
     struct timeval timeout;
+    int constant_timeout;
     iohandler_callback *callback;
     struct IOBuffer readbuf;
     struct IOBuffer writebuf;
@@ -120,6 +121,7 @@ void iohandler_set(int setting, int value);
 
 struct IODescriptor *iohandler_add(int sockfd, enum IOType type, struct timeval *timeout, iohandler_callback *callback);
 struct IODescriptor *iohandler_timer(struct timeval timeout, iohandler_callback *callback);
+struct IODescriptor *iohandler_constant_timer(int msec, iohandler_callback *callback);
 struct IODescriptor *iohandler_connect(const char *hostname, unsigned int port, int ssl, const char *bind, iohandler_callback *callback);
 struct IODescriptor *iohandler_connect_flags(const char *hostname, unsigned int port, int ssl, const char *bindhost, iohandler_callback *callback, int flags);
 struct IODescriptor *iohandler_listen(const char *hostname, unsigned int port, iohandler_callback *callback);

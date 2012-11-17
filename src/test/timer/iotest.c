@@ -26,7 +26,7 @@ static IOHANDLER_LOG_BACKEND(io_log);
 static struct timeval test_clock1, test_clock2;
 static int timercount;
 
-static void add_timer(int ms) {
+void add_timer(int ms) {
     struct timeval timeout;
     gettimeofday(&timeout, NULL);
     timeout.tv_usec += (ms % 1000) * 1000;
@@ -45,7 +45,8 @@ int main(int argc, char *argv[]) {
     
     gettimeofday(&test_clock1, NULL);
     gettimeofday(&test_clock2, NULL);
-    add_timer(TEST_DURATION);
+    //add_timer(TEST_DURATION);
+    iohandler_constant_timer(TEST_DURATION, io_callback);
     timercount = 0;
     
     printf("[timer 0] %ld.%ld\n", test_clock1.tv_sec, test_clock1.tv_usec);
@@ -61,7 +62,7 @@ static IOHANDLER_CALLBACK(io_callback) {
     double diff2;
     switch(event->type) {
         case IOEVENT_TIMEOUT:
-            add_timer(TEST_DURATION);
+            //add_timer(TEST_DURATION);
             timercount++;
             gettimeofday(&curr_time, NULL);
             diff1 = (curr_time.tv_sec - test_clock1.tv_sec) * 1000 + ((curr_time.tv_usec - test_clock1.tv_usec) / 1000);

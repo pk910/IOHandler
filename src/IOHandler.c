@@ -235,7 +235,14 @@ void iohandler_set_timeout(struct IODescriptor *descriptor, struct timeval *time
         descriptor->next->prev = descriptor->prev;
     if(descriptor == timer_priority)
         timer_priority = descriptor->next;
-    if(timeout) {
+    if(timeout && timeout->tv_sec == 0 && descriptor->constant_timeout) {
+        descriptor->timeout.tv_usec += (descriptor->constant_timeout % 1000) * 1000;
+        descriptor->timeout.tv_sec += (descriptor->constant_timeout / 1000);
+        if(descriptor->timeout.tv_usec > 1000000) {
+            descriptor->timeout.tv_sec += (descriptor->timeout.tv_usec / 1000000);
+            descriptor->timeout.tv_usec %= 1000000;
+        }
+    } else if(timeout) {
         descriptor->timeout = *timeout;
         if(descriptor->timeout.tv_usec > 1000000) {
             descriptor->timeout.tv_usec -= 1000000;
@@ -264,6 +271,26 @@ struct IODescriptor *iohandler_timer(struct timeval timeout, iohandler_callback 
         iohandler_log(IOLOG_ERROR, "could not allocate memory for IODescriptor in %s:%d", __FILE__, __LINE__);
         return NULL;
     }
+    iohandler_log(IOLOG_DEBUG, "added timer descriptor (sec: %d; usec: %d)", timeout.tv_sec, timeout.tv_usec);
+    return descriptor;
+}
+
+struct IODescriptor *iohandler_constant_timer(int msec, iohandler_callback *callback) {
+    struct IODescriptor *descriptor;
+    struct timeval timeout;
+    gettimeofday(&timeout, NULL);
+    timeout.tv_usec += (msec % 1000) * 1000;
+    timeout.tv_sec += (msec / 1000);
+    if(timeout.tv_usec > 1000000) {
+        timeout.tv_sec += (timeout.tv_usec / 1000000);
+        timeout.tv_usec %= 1000000;
+    }
+    descriptor = iohandler_add(-1, IOTYPE_TIMER, &timeout, callback);
+    if(!descriptor) {
+        iohandler_log(IOLOG_ERROR, "could not allocate memory for IODescriptor in %s:%d", __FILE__, __LINE__);
+        return NULL;
+    }
+    descriptor->constant_timeout = msec;
     iohandler_log(IOLOG_DEBUG, "added timer descriptor (sec: %d; usec: %d)", timeout.tv_sec, timeout.tv_usec);
     return descriptor;
 }

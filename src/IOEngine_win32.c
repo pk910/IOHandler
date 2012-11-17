@@ -63,8 +63,14 @@ static LRESULT CALLBACK engine_win32_wndproc(HWND hWnd, UINT uMsg, WPARAM wParam
             tdiff.tv_sec = timer_priority->timeout.tv_sec - now.tv_sec;
             tdiff.tv_usec = timer_priority->timeout.tv_usec - now.tv_usec;
             if(tdiff.tv_sec < 0 || (tdiff.tv_sec == 0 && tdiff.tv_usec <= 0)) {
-                iohandler_events(timer_priority, 0, 0);
-                iohandler_close(timer_priority); //also sets timer_priority to the next timed element
+                if(timer_priority->constant_timeout) {
+                    tdiff.tv_sec = 0;
+                    iohandler_set_timeout(timer_priority, &tdiff);
+                    iohandler_events(timer_priority, 0, 0);
+                } else {
+                    iohandler_events(timer_priority, 0, 0);
+                    iohandler_close(timer_priority); //also sets timer_priority to the next timed element
+                }
                 continue;
             }
             break;
@@ -213,9 +219,15 @@ static void engine_win32_loop(struct timeval *timeout) {
     while(timer_priority) {
         tdiff.tv_sec = timer_priority->timeout.tv_sec - now.tv_sec;
         tdiff.tv_usec = timer_priority->timeout.tv_usec - now.tv_usec;
-        if(tdiff.tv_sec < 0 || (tdiff.tv_sec == 0 && tdiff.tv_usec < 1000)) {
-            iohandler_events(timer_priority, 0, 0);
-            iohandler_close(timer_priority); //also sets timer_priority to the next timed element
+        if(tdiff.tv_sec < 0 || (tdiff.tv_sec == 0 && tdiff.tv_usec < 100)) {
+            if(timer_priority->constant_timeout) {
+                tdiff.tv_sec = 0;
+                iohandler_set_timeout(timer_priority, &tdiff);
+                iohandler_events(timer_priority, 0, 0);
+            } else {
+                iohandler_events(timer_priority, 0, 0);
+                iohandler_close(timer_priority); //also sets timer_priority to the next timed element
+            }
             continue;
         } else if(tdiff.tv_usec < 0) {
             tdiff.tv_sec--;
