@@ -34,6 +34,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
+#include <fcntl.h>
 #endif
 
 #ifndef EWOULDBLOCK
@@ -408,11 +409,11 @@ struct IODescriptor *iohandler_connect_flags(const char *hostname, unsigned int 
     //make sockfd unblocking
     #if defined(F_GETFL)
     {
-        int flags;
-        flags = fcntl(sockfd, F_GETFL);
-        fcntl(sockfd, F_SETFL, flags|O_NONBLOCK);
-        flags = fcntl(sockfd, F_GETFD);
-        fcntl(sockfd, F_SETFD, flags|FD_CLOEXEC);
+        int fcntl_flags;
+        fcntl_flags = fcntl(sockfd, F_GETFL);
+        fcntl(sockfd, F_SETFL, fcntl_flags|O_NONBLOCK);
+        fcntl_flags = fcntl(sockfd, F_GETFD);
+        fcntl(sockfd, F_SETFD, fcntl_flags|FD_CLOEXEC);
     }
     #else
     /* I hope you're using the Win32 backend or something else that
