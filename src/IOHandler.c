@@ -481,7 +481,7 @@ struct IODescriptor *iohandler_listen_flags(const char *hostname, unsigned int p
         ip6->sin6_port = htons(port);
         
         bind(sockfd, (struct sockaddr*)ip6, sizeof(*ip6));
-    } else if(ip4 && (flags && IOHANDLER_LISTEN_IPV4)) {
+    } else if(ip4 && (flags & IOHANDLER_LISTEN_IPV4)) {
         sockfd = socket(AF_INET, SOCK_STREAM, 0);
         if(sockfd == -1) return NULL;
         
