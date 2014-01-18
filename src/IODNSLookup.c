@@ -19,6 +19,7 @@
 #include "IOHandler.h"
 #include "IODNSLookup.h"
 #include "IOLog.h"
+#include "IOSockets.h"
 
 #ifdef HAVE_PTHREAD_H
 pthread_mutex_t iodns_sync;
@@ -41,6 +42,7 @@ static void iodns_init_engine() {
 		iohandler_log(IOLOG_FATAL, "found no useable IO DNS engine");
 		return;
 	}
+	iohandler_log(IOLOG_DEBUG, "using %s IODNS engine", dnsengine->name);
 }
 
 void _init_iodns() {
@@ -105,6 +107,7 @@ void iodns_event_callback(struct _IODNSQuery *query, enum IODNSEventType state) 
 		struct IODNSEvent event;
 		event.type = state;
 		event.query = descriptor;
+		event.result = query->result;
 		
 		descriptor->parent = NULL;
 		_stop_dnsquery(query);
@@ -113,6 +116,16 @@ void iodns_event_callback(struct _IODNSQuery *query, enum IODNSEventType state) 
 			descriptor->callback(&event);
 		
 		iogc_add(descriptor);
+	} else if((query->flags & IODNSFLAG_PARENT_SOCKET)) {
+		struct IODNSEvent event;
+		event.type = state;
+		event.query = NULL;
+		event.result = query->result
+		void *parent = query->parent;
+		
+		_stop_dnsquery(query);
+		iosocket_lookup_callback(parent, &event);
+		
 	}
 }
 

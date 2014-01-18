@@ -59,6 +59,7 @@ void iohandler_init() {
 	
 	_init_timers();
 	_init_iodns();
+	_init_sockets();
 	
 	iohandler_running = 1;
 }

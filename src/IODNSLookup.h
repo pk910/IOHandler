@@ -32,6 +32,7 @@ struct IODNSAddress;
 #define IODNSFLAG_RUNNING        0x01
 #define IODNSFLAG_PROCESSING     0x02
 #define IODNSFLAG_PARENT_PUBLIC  0x04
+#define IODNSFLAG_PARENT_SOCKET  0x08
 
 struct _IODNSQuery {
 	void *query;

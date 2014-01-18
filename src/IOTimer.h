@@ -24,6 +24,7 @@
 #define IOTIMERFLAG_ACTIVE         0x02
 #define IOTIMERFLAG_IN_LIST        0x04
 #define IOTIMERFLAG_PARENT_PUBLIC  0x08
+#define IOTIMERFLAG_PARENT_SOCKET  0x10
 
 struct _IOTimerDescriptor;
 

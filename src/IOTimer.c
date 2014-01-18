@@ -17,7 +17,7 @@
 #define _IOHandler_internals
 #include "IOInternal.h"
 #include "IOHandler.h"
-#include "IOHandlerTimer.h"
+#include "IOTimer.h"
 #include "IOLog.h"
 
 #ifdef HAVE_PTHREAD_H
