@@ -16,41 +16,40 @@
  */
 
 #include <stdio.h>
-#include "../IOHandler.h"
+#include "../../IOHandler/IOHandler.h"
+#include "../../IOHandler/IOSockets.h"
+#include "../../IOHandler/IOLog.h"
 
-static IOHANDLER_CALLBACK(io_callback);
-static IOHANDLER_LOG_BACKEND(io_log);
+static IOSOCKET_CALLBACK(io_callback);
+static IOLOG_CALLBACK(io_log);
 
-static struct IODescriptor *irc_iofd = NULL;
+static struct IOSocket *irc_iofd = NULL;
 
 int main(int argc, char *argv[]) {
-    iolog_backend = io_log;
+	iohandler_init();
+	
+    iolog_register_callback(io_log);
     
-    irc_iofd = iohandler_connect("pk910.de", 6667, 0, NULL, io_callback);
-    
-    struct IODescriptor *iofd;
-    iofd = iohandler_add(0, IOTYPE_STDIN, NULL, io_callback);
-    iofd->read_lines = 1;
-    
-    while(1) {
-        iohandler_poll();
-    }
+    irc_iofd = iosocket_connect_flags("irc.nextirc.net", 6667, 0, NULL, io_callback, IOSOCKET_ADDR_IPV4);
+    irc_iofd->parse_delimiter = 1;
+	irc_iofd->delimiters[0] = '\n';
+	irc_iofd->delimiters[1] = '\r';
+	
+	iohandler_run();
+	
+	return 0;
 }
 
-static IOHANDLER_CALLBACK(io_callback) {
+static IOSOCKET_CALLBACK(io_callback) {
     switch(event->type) {
-        case IOEVENT_CONNECTED:
+        case IOSOCKETEVENT_CONNECTED:
             printf("[connect]\n");
             break;
-        case IOEVENT_CLOSED:
+        case IOSOCKETEVENT_CLOSED:
             printf("[disconnect]\n");
             break;
-        case IOEVENT_RECV:
-            if(event->iofd->type == IOTYPE_STDIN) {
-                iohandler_printf(irc_iofd, "%s\n", event->data.recv_str);
-                printf("[out] %s\n", event->data.recv_str);
-            } else
-                printf("[in] %s\n", event->data.recv_str);
+        case IOSOCKETEVENT_RECV:
+            printf("[in] %s\n", event->data.recv_str);
             break;
         
         default:
@@ -58,6 +57,6 @@ static IOHANDLER_CALLBACK(io_callback) {
     }
 }
 
-static IOHANDLER_LOG_BACKEND(io_log) {
+static IOLOG_CALLBACK(io_log) {
     //printf("%s", line);
 }

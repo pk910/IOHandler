@@ -17,7 +17,7 @@
 #define _IOHandler_internals
 #include "IOInternal.h"
 #include "IOHandler.h"
-#include "IODNSHandler.h"
+#include "IODNSLookup.h"
 
 static int dnsengine_cares_init() {
 	/* TODO */

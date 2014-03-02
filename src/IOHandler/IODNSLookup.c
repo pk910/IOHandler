@@ -21,9 +21,7 @@
 #include "IOLog.h"
 #include "IOSockets.h"
 
-#ifdef HAVE_PTHREAD_H
-pthread_mutex_t iodns_sync;
-#endif
+#include <string.h>
 
 struct _IODNSQuery *iodnsquery_first = NULL;
 struct _IODNSQuery *iodnsquery_last = NULL;
@@ -39,14 +37,13 @@ static void iodns_init_engine() {
 	else if(dnsengine_default.init && dnsengine_default.init())
 		dnsengine = &dnsengine_default;
 	else {
-		iohandler_log(IOLOG_FATAL, "found no useable IO DNS engine");
+		iolog_trigger(IOLOG_FATAL, "found no useable IO DNS engine");
 		return;
 	}
-	iohandler_log(IOLOG_DEBUG, "using %s IODNS engine", dnsengine->name);
+	iolog_trigger(IOLOG_DEBUG, "using %s IODNS engine", dnsengine->name);
 }
 
 void _init_iodns() {
-	IOTHREAD_MUTEX_INIT(iodns_sync);
 	iodns_init_engine();
 }
 
@@ -56,26 +53,21 @@ struct _IODNSQuery *_create_dnsquery() {
 		iolog_trigger(IOLOG_ERROR, "could not allocate memory for _IODNSQuery in %s:%d", __FILE__, __LINE__);
 		return NULL;
 	}
-	IOSYNCHRONIZE(iodns_sync);
 	if(iodnsquery_last)
 		iodnsquery_last->next = query;
 	else
 		iodnsquery_first = query;
 	query->prev = iodnsquery_last;
 	iodnsquery_last = query;
-	IODESYNCHRONIZE(iodns_sync);
 	return query;
 }
 
 void _start_dnsquery(struct _IODNSQuery *query) {
-	IOSYNCHRONIZE(iodns_sync);
 	query->flags |= IODNSFLAG_RUNNING;
 	dnsengine->add(query);
-	IODESYNCHRONIZE(iodns_sync);
 }
 
 void _free_dnsquery(struct _IODNSQuery *query) {
-	IOSYNCHRONIZE(iodns_sync);
 	if(query->prev)
 		query->prev->next = query->next;
 	else
@@ -84,21 +76,18 @@ void _free_dnsquery(struct _IODNSQuery *query) {
 		query->next->prev = query->prev;
 	else
 		iodnsquery_last = query->prev;
-	IODESYNCHRONIZE(iodns_sync);
 	if((query->type & IODNS_REVERSE) && query->request.addr.address)
 		free(query->request.addr.address);
 	free(query);
 }
 
 void _stop_dnsquery(struct _IODNSQuery *query) {
-	IOSYNCHRONIZE(iodns_sync);
 	if((query->flags & IODNSFLAG_RUNNING)) {
 		query->flags &= ~IODNSFLAG_RUNNING;
 		dnsengine->remove(query);
 	}
 	if(!(query->flags & IODNSFLAG_PROCESSING))
 		_free_dnsquery(query);
-	IODESYNCHRONIZE(iodns_sync);
 }
 
 void iodns_event_callback(struct _IODNSQuery *query, enum IODNSEventType state) {
@@ -109,7 +98,7 @@ void iodns_event_callback(struct _IODNSQuery *query, enum IODNSEventType state) 
 		event.query = descriptor;
 		event.result = query->result;
 		
-		descriptor->parent = NULL;
+		descriptor->query = NULL;
 		_stop_dnsquery(query);
 		
 		if(descriptor->callback)
@@ -120,7 +109,7 @@ void iodns_event_callback(struct _IODNSQuery *query, enum IODNSEventType state) 
 		struct IODNSEvent event;
 		event.type = state;
 		event.query = NULL;
-		event.result = query->result
+		event.result = query->result;
 		void *parent = query->parent;
 		
 		_stop_dnsquery(query);
@@ -131,7 +120,7 @@ void iodns_event_callback(struct _IODNSQuery *query, enum IODNSEventType state) 
 
 void iodns_poll() {
 	if(dnsengine)
-		dnsengine.loop();
+		dnsengine->loop();
 }
 
 /* public functions */
@@ -149,7 +138,7 @@ struct IODNSQuery *iodns_getaddrinfo(char *hostname, int records, iodns_callback
 	struct _IODNSQuery *query = _create_dnsquery();
 	if(!query) {
 		free(descriptor);
-		return NULL
+		return NULL;
 	}
 	
 	query->parent = descriptor;
@@ -165,7 +154,7 @@ struct IODNSQuery *iodns_getaddrinfo(char *hostname, int records, iodns_callback
 	return descriptor;
 }
 
-struct IODNSQuery *iodns_getnameinfo(const struct sockaddr *addr, socklen_t addrlen, iodns_callback *callback) {
+struct IODNSQuery *iodns_getnameinfo(const struct sockaddr *addr, size_t addrlen, iodns_callback *callback) {
 	if(!addr || !callback)
 		return NULL;
 	
@@ -178,7 +167,7 @@ struct IODNSQuery *iodns_getnameinfo(const struct sockaddr *addr, socklen_t addr
 	struct _IODNSQuery *query = _create_dnsquery();
 	if(!query) {
 		free(descriptor);
-		return NULL
+		return NULL;
 	}
 	
 	query->parent = descriptor;
@@ -212,7 +201,7 @@ void iodns_abort(struct IODNSQuery *descriptor) {
 		return;
 	}
 	
-	_stop_dnsquery(query)
+	_stop_dnsquery(query);
 }
 
 void iodns_free_result(struct IODNSResult *result) {

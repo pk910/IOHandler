@@ -1,4 +1,4 @@
-/* IOHandler.h - IOMultiplexer v2
+/* utime.h - IOMultiplexer
  * Copyright (C) 2014  Philipp Kreil (pk910)
  * 
  * This program is free software: you can redistribute it and/or modify
@@ -14,17 +14,17 @@
  * You should have received a copy of the GNU General Public License 
  * along with this program. If not, see <http://www.gnu.org/licenses/>. 
  */
-#ifndef _IOHandler_h
-#define _IOHandler_h
-#ifdef _IOHandler_internals
-
+#ifndef _compat_utime_h
+#define _compat_utime_h
+#include "../IOHandler_config.h"
+#include <sys/time.h>
+#ifdef HAVE_UNISTD_H
+#include <unistd.h>
 #endif
 
-void iohandler_init();
-void iohandler_run();
-void iohandler_stop();
+void usleep_tv(struct timeval tv);
 
-void iohandler_set_threads(int threads); /* default: 1 */
-void iohandler_set_gc(int enabled); /* default: enabled */
-
+#ifndef HAVE_USLEEP
+void usleep(long usec);
+#endif
 #endif

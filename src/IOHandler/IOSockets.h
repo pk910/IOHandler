@@ -16,12 +16,48 @@
  */
 #ifndef _IOSockets_h
 #define _IOSockets_h
+#include <sys/time.h>
+#include <stddef.h>
+#include "IODNSAddress.struct.h"
+
+struct IOSocketBuffer {
+    char *buffer;
+    size_t bufpos, buflen;
+};
+
 #ifndef _IOHandler_internals
 #include "IOHandler.h"
 #else
 
-#define IOSOCKET_LINE_LEN 1024
+struct _IOSocket;
+struct IOSocket;
+struct IOSocketBuffer;
+struct IOSSLDescriptor;
+struct _IODNSQuery;
+struct IODNSEvent;
 
+struct IOEngine {
+    const char *name;
+    int (*init)(void);
+    void (*add)(struct _IOSocket *iosock);
+    void (*remove)(struct _IOSocket *iosock);
+    void (*update)(struct _IOSocket *iosock);
+    void (*loop)(struct timeval *timeout);
+    void (*cleanup)(void);
+};
+
+/* IO Engines */
+extern struct IOEngine engine_select; /* select system call (should always be useable) */
+extern struct IOEngine engine_kevent;
+extern struct IOEngine engine_epoll;
+extern struct IOEngine engine_win32;
+
+
+/* _IOSocket linked list */
+extern struct _IOSocket *iosocket_first;
+extern struct _IOSocket *iosocket_last;
+
+/* _IOSocket socket_flags */
 #define IOSOCKETFLAG_ACTIVE           0x0001
 #define IOSOCKETFLAG_LISTENING        0x0002
 #define IOSOCKETFLAG_PENDING_BINDDNS  0x0004
@@ -33,12 +69,12 @@
 #define IOSOCKETFLAG_PARENT_PUBLIC    0x0100
 #define IOSOCKETFLAG_PARENT_DNSENGINE 0x0200
 #define IOSOCKETFLAG_SSLSOCKET        0x0400 /* use ssl after connecting */
-#define IOSOCKETFLAG_SHUTDOWN         0x0800 /* disconnect pending */
-
-struct IODNSAddress;
-struct IOSocketBuffer;
-struct IOSSLDescriptor;
-struct _IODNSQuery;
+#define IOSOCKETFLAG_SSL_HANDSHAKE    0x0800 /* SSL Handshake in progress */
+#define IOSOCKETFLAG_SSL_WANTWRITE    0x1000
+#define IOSOCKETFLAG_SHUTDOWN         0x2000 /* disconnect pending */
+#define IOSOCKETFLAG_CONNECTING       0x4000
+#define IOSOCKETFLAG_INCOMING         0x8000 /* incoming (accepted) connection */
+#define IOSOCKETFLAG_DEAD            0x10000
 
 struct IOSocketDNSLookup {
 	unsigned int bindlookup : 1;
@@ -51,7 +87,7 @@ struct IOSocketDNSLookup {
 struct _IOSocket {
     int fd;
 	
-	unsigned int socket_flags : 16;
+	unsigned int socket_flags : 24;
 	
 	union {
 		struct IODNSAddress addr;
@@ -75,7 +111,11 @@ struct _IOSocket {
 };
 
 void _init_sockets();
+void iosocket_loop(int usec);
 void iosocket_lookup_callback(struct IOSocketDNSLookup *lookup, struct IODNSEvent *event);
+void iosocket_events_callback(struct _IOSocket *iosock, int readable, int writeable);
+
+#define iosocket_wants_writes(IOSOCK) (IOSOCK->writebuf.bufpos || (IOSOCK->socket_flags & (IOSOCKETFLAG_CONNECTING | IOSOCKETFLAG_SSL_WANTWRITE)))
 
 #endif
 
@@ -108,15 +148,12 @@ struct IOSocket {
 	enum IOSocketStatus status;
 	int listening : 1;
 	int ssl : 1;
-	int read_lines : 1;
+	int parse_delimiter : 1;
+	int parse_empty : 1; /* parse "empty" lines (only if parse_delimiter is set) */
+	unsigned char delimiters[IOSOCKET_PARSE_DELIMITERS_COUNT];
 	
 	void *data;
 	iosocket_callback *callback;
-};
-
-struct IOSocketBuffer {
-    char *buffer;
-    size_t bufpos, buflen;
 };
 
 struct IOSocketEvent {
@@ -133,6 +170,7 @@ struct IOSocketEvent {
 
 #define IOSOCKET_ADDR_IPV4 0x01
 #define IOSOCKET_ADDR_IPV6 0x02 /* overrides IOSOCKET_ADDR_IPV4 */
+#define IOSOCKET_PROTO_UDP 0x04
 
 struct IOSocket *iosocket_connect(const char *hostname, unsigned int port, int ssl, const char *bindhost, iosocket_callback *callback);
 struct IOSocket *iosocket_connect_flags(const char *hostname, unsigned int port, int ssl, const char *bindhost, iosocket_callback *callback, int flags);

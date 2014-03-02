@@ -20,28 +20,8 @@
 #include "IOHandler.h"
 #else
 
-/* Multithreading */
-#ifdef HAVE_PTHREAD_H
-#include <pthread.h>
-#ifdef PTHREAD_MUTEX_RECURSIVE_NP
-#define PTHREAD_MUTEX_RECURSIVE_VAL PTHREAD_MUTEX_RECURSIVE_NP
-#else
-#define PTHREAD_MUTEX_RECURSIVE_VAL PTHREAD_MUTEX_RECURSIVE
-#endif
-#define IOTHREAD_MUTEX_INIT(var) { \
-    pthread_mutexattr_t mutex_attr; \
-    pthread_mutexattr_init(&mutex_attr);\
-    pthread_mutexattr_settype(&mutex_attr, PTHREAD_MUTEX_RECURSIVE_VAL);\
-    pthread_mutex_init(&var, &mutex_attr); \
-}
-#define IOSYNCHRONIZE(var) pthread_mutex_lock(&var)
-#define IODESYNCHRONIZE(var) pthread_mutex_unlock(&var)
-#else
-#define IOTHREAD_MUTEX_INIT(var)
-#define IOSYNCHRONIZE(var)
-#define IODESYNCHRONIZE(var)
-#endif
-
+#define timeval_is_bigger(x,y) ((x.tv_sec > y.tv_sec) || (x.tv_sec == y.tv_sec && x.tv_usec > y.tv_usec))
+#define timeval_is_smaler(x,y) ((x.tv_sec < y.tv_sec) || (x.tv_sec == y.tv_sec && x.tv_usec < y.tv_usec))
 
 #define IOGC_FREE(NAME) void NAME(void *object)
 typedef IOGC_FREE(iogc_free);

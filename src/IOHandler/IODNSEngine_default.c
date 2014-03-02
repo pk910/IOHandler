@@ -17,20 +17,37 @@
 #define _IOHandler_internals
 #include "IOInternal.h"
 #include "IOHandler.h"
-#include "IODNSHandler.h"
+#include "IOLog.h"
+#include "IODNSLookup.h"
 
-#ifdef HAVE_PTHREAD_H
-static pthread_t *iodns_thread;
+#ifdef WIN32
+#define _WIN32_WINNT 0x501
+#include <windows.h>
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netdb.h>
+#endif
+#include "compat/inet.h"
+#include <stdlib.h>
+#include <string.h>
+
+
+#ifdef IODNS_USE_THREADS
+static pthread_t iodns_thread;
 static int iodns_thread_running = 1;
 
 static pthread_cond_t iodns_cond;
-static pthread_mutex_t iodns_sync2;
+static pthread_mutex_t iodns_sync, iodns_sync2;
 #endif
 static int iodns_loop_blocking = 0;
 
 static void iodns_process_queries();
 
-static void dnsengine_worker_main(void *arg) {
+#ifdef IODNS_USE_THREADS
+static void *dnsengine_worker_main(void *arg) {
 	struct _IODNSQuery *query;
 	while(iodns_thread_running) {
 		IOSYNCHRONIZE(iodns_sync);
@@ -45,12 +62,15 @@ static void dnsengine_worker_main(void *arg) {
 		if(iodns_thread_running)
 			iodns_process_queries();
 	}
+	return NULL;
 }
+#endif
 
 static int dnsengine_default_init() {
-	#ifdef HAVE_PTHREAD_H
+	#ifdef IODNS_USE_THREADS
 	/* create worker thread */
 	pthread_cond_init(&iodns_cond, NULL);
+	IOTHREAD_MUTEX_INIT(iodns_sync);
 	IOTHREAD_MUTEX_INIT(iodns_sync2);
 	
 	iodns_thread_running = 1;
@@ -60,7 +80,6 @@ static int dnsengine_default_init() {
 	if(thread_err) {
 		iolog_trigger(IOLOG_ERROR, "could not create pthread in %s:%d (Returned: %i)", __FILE__, __LINE__, thread_err);
 		iodns_loop_blocking = 1;
-		iodns_thread = NULL;
 		iodns_thread_running = 0;
 	}
 	#else
@@ -70,7 +89,7 @@ static int dnsengine_default_init() {
 }
 
 static void dnsengine_default_stop() {
-	#ifdef HAVE_PTHREAD_H
+	#ifdef IODNS_USE_THREADS
 	if(iodns_thread_running) {
 		iodns_thread_running = 0;
 		IOSYNCHRONIZE(iodns_sync2);
@@ -82,7 +101,7 @@ static void dnsengine_default_stop() {
 }
 
 static void dnsengine_default_add(struct _IODNSQuery *iodns) {
-    #ifdef HAVE_PTHREAD_H
+    #ifdef IODNS_USE_THREADS
 	if(iodns_thread_running) {
 		IOSYNCHRONIZE(iodns_sync2);
 		pthread_cond_signal(&iodns_cond);
@@ -102,12 +121,12 @@ static void dnsengine_default_loop() {
 
 static void iodns_process_queries() {
 	enum IODNSEventType querystate;
-    struct addrinfo hints, *res, *next_res;
+    struct addrinfo hints, *res, *allres;
     struct _IODNSQuery *iodns, *next_iodns;
     struct IODNSResult *dnsresult;
 	iodns_process_queries_start:
 	IOSYNCHRONIZE(iodns_sync);
-    for(iodns = first_dnsquery; iodns; iodns = next_iodns) {
+    for(iodns = iodnsquery_first; iodns; iodns = next_iodns) {
         next_iodns = iodns->next;
 		
 		if(!(iodns->flags & IODNSFLAG_RUNNING))
@@ -124,7 +143,9 @@ static void iodns_process_queries() {
             hints.ai_family = PF_UNSPEC;
             hints.ai_socktype = SOCK_STREAM;
             hints.ai_flags |= AI_CANONNAME;
-            if (!getaddrinfo(iodns->request.host, NULL, &hints, &res)) {
+			int ret;
+            if (!(ret = getaddrinfo(iodns->request.host, NULL, &hints, &allres))) {
+				res = allres;
                 while (res) {
                     switch (res->ai_family) {
                     case AF_INET:
@@ -132,10 +153,15 @@ static void iodns_process_queries() {
                             dnsresult = malloc(sizeof(*dnsresult));
                             dnsresult->type = IODNS_RECORD_A;
                             dnsresult->result.addr.addresslen = res->ai_addrlen;
-                            dnsresult->result.addr.address = malloc(dnsresult->addresslen);
-                            memcpy(dnsresult->address, res->ai_addr, dnsresult->addresslen);
+                            dnsresult->result.addr.address = malloc(dnsresult->result.addr.addresslen);
+                            memcpy(dnsresult->result.addr.address, res->ai_addr, dnsresult->result.addr.addresslen);
                             dnsresult->next = iodns->result;
                             iodns->result = dnsresult;
+                            
+                            char str[INET_ADDRSTRLEN];
+							inet_ntop( AF_INET, &((struct sockaddr_in *)dnsresult->result.addr.address)->sin_addr, str, INET_ADDRSTRLEN );
+                            iolog_trigger(IOLOG_DEBUG, "Resolved %s to (A): %s", iodns->request.host, str);
+                            
                             querystate = IODNSEVENT_SUCCESS;
                         }
                         break;
@@ -144,19 +170,25 @@ static void iodns_process_queries() {
                             dnsresult = malloc(sizeof(*dnsresult));
                             dnsresult->type = IODNS_RECORD_AAAA;
                             dnsresult->result.addr.addresslen = res->ai_addrlen;
-                            dnsresult->result.addr.address = malloc(dnsresult->addresslen);
-                            memcpy(dnsresult->address, res->ai_addr, dnsresult->addresslen);
+                            dnsresult->result.addr.address = calloc(dnsresult->result.addr.addresslen, 1);
+                            memcpy(dnsresult->result.addr.address, res->ai_addr, dnsresult->result.addr.addresslen);
                             dnsresult->next = iodns->result;
                             iodns->result = dnsresult;
+                            
+                            char str[INET6_ADDRSTRLEN];
+							inet_ntop( AF_INET6, &((struct sockaddr_in6 *)dnsresult->result.addr.address)->sin6_addr, str, INET6_ADDRSTRLEN );
+                            iolog_trigger(IOLOG_DEBUG, "Resolved %s to (AAAA): %s", iodns->request.host, str);
+                            
                             querystate = IODNSEVENT_SUCCESS;
                         }
                         break;
                     }
-                    next_res = res->ai_next;
-                    freeaddrinfo(res);
-                    res = next_res;
+                    res = res->ai_next;
                 }
-            }
+                freeaddrinfo(allres);
+            } else {
+				iolog_trigger(IOLOG_WARNING, "getaddrinfo returned error code: %d", ret);
+			}
         }
 		IOSYNCHRONIZE(iodns_sync);
 		if(!(iodns->flags & IODNSFLAG_RUNNING)) {

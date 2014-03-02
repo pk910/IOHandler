@@ -19,6 +19,8 @@
 #ifndef _IOHandler_internals
 #include "IOHandler.h"
 #else
+#include <sys/time.h>
+
 
 #define IOTIMERFLAG_PERIODIC       0x01
 #define IOTIMERFLAG_ACTIVE         0x02
@@ -41,10 +43,13 @@ struct _IOTimerDescriptor {
 };
 
 void _init_timers();
-struct _IOTimerDescriptor _create_timer(struct timeval timeout);
+struct _IOTimerDescriptor *_create_timer(struct timeval *timeout);
 void _destroy_timer(struct _IOTimerDescriptor *timer);
+void _trigger_timer();
 
 #endif
+
+struct IOTimerDescriptor;
 
 #define IOTIMER_CALLBACK(NAME) void NAME(struct IOTimerDescriptor *iotimer)
 typedef IOTIMER_CALLBACK(iotimer_callback);
@@ -56,7 +61,7 @@ struct IOTimerDescriptor {
     void *data;
 };
 
-struct IOTimerDescriptor iotimer_create(struct timeval *timeout);
+struct IOTimerDescriptor *iotimer_create(struct timeval *timeout);
 void iotimer_start(struct IOTimerDescriptor *iotimer);
 void iotimer_set_autoreload(struct IOTimerDescriptor *iotimer, struct timeval *autoreload);
 void iotimer_set_callback(struct IOTimerDescriptor *iotimer, iotimer_callback *callback);

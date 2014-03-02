@@ -20,21 +20,17 @@
 #include "IOTimer.h"
 #include "IOLog.h"
 
-#ifdef HAVE_PTHREAD_H
-static pthread_mutex_t iotimer_sync;
-#endif
+#include <sys/time.h>
+#include <stdlib.h>
 
-#define timeval_is_bigger(x,y) ((x->tv_sec > y->tv_sec) || (x->tv_sec == y->tv_sec && x->tv_usec > y->tv_usec))
-#define timeval_is_smaler(x,y) ((x->tv_sec < y->tv_sec) || (x->tv_sec == y->tv_sec && x->tv_usec < y->tv_usec))
-
-static void _rearrange_timer(struct IOTimerDescriptor *timer);
-static void _autoreload_timer(struct IOTimerDescriptor *timer);
+static void _rearrange_timer(struct _IOTimerDescriptor *timer);
+static void _autoreload_timer(struct _IOTimerDescriptor *timer);
 
 struct _IOTimerDescriptor *iotimer_sorted_descriptors;
 
 /* public functions */
 
-struct IOTimerDescriptor iotimer_create(struct timeval *timeout) {
+struct IOTimerDescriptor *iotimer_create(struct timeval *timeout) {
 	struct IOTimerDescriptor *descriptor = calloc(1, sizeof(*descriptor));
     if(!descriptor) {
         iolog_trigger(IOLOG_ERROR, "could not allocate memory for IOTimerDescriptor in %s:%d", __FILE__, __LINE__);
@@ -74,9 +70,9 @@ void iotimer_set_autoreload(struct IOTimerDescriptor *descriptor, struct timeval
 		timer->autoreload = *autoreload;
 		
 		if(!(timer->flags & IOTIMERFLAG_IN_LIST)) {
-			struct timeval ctime;
-			gettimeofday(&ctime, NULL);
-			timer->timeout = ctime;
+			struct timeval now;
+			gettimeofday(&now, NULL);
+			timer->timeout = now;
 			_autoreload_timer(timer);
 		}
 	} else {
@@ -102,10 +98,10 @@ void iotimer_destroy(struct IOTimerDescriptor *descriptor) {
 
 /* internal functions */
 void _init_timers() {
-	IOTHREAD_MUTEX_INIT(iotimer_sync);
+	//nothing in here
 }
 
-struct _IOTimerDescriptor _create_timer(struct timeval *timeout) {
+struct _IOTimerDescriptor *_create_timer(struct timeval *timeout) {
 	struct _IOTimerDescriptor *timer = calloc(1, sizeof(*timer));
     if(!timer) {
         iolog_trigger(IOLOG_ERROR, "could not allocate memory for _IOTimerDescriptor in %s:%d", __FILE__, __LINE__);
@@ -118,8 +114,7 @@ struct _IOTimerDescriptor _create_timer(struct timeval *timeout) {
 	return timer;
 }
 
-static void _rearrange_timer(struct IOTimerDescriptor *timer) {
-	IOSYNCHRONIZE(iotimer_sync);
+static void _rearrange_timer(struct _IOTimerDescriptor *timer) {
 	if((timer->flags & IOTIMERFLAG_IN_LIST)) {
 		if(timer->prev == NULL)
 			iotimer_sorted_descriptors = timer->next;
@@ -129,8 +124,8 @@ static void _rearrange_timer(struct IOTimerDescriptor *timer) {
 			timer->next->prev = timer->prev;
 	}
 	struct _IOTimerDescriptor *ctimer;
-	for(ctimer = iotimer_sorted_descriptors; ctimer;) {
-		if(timeval_is_bigger(&ctimer->timeout, &timer->timeout)) {
+	for(ctimer = iotimer_sorted_descriptors; ctimer; ctimer = ctimer->next) {
+		if(timeval_is_bigger(ctimer->timeout, timer->timeout)) {
 			timer->next = ctimer;
 			timer->prev = ctimer->prev;
 			if(ctimer->prev)
@@ -138,7 +133,7 @@ static void _rearrange_timer(struct IOTimerDescriptor *timer) {
 			else
 				iotimer_sorted_descriptors = timer;
 			ctimer->prev = timer;
-			break
+			break;
 		}
 		else if(ctimer->next == NULL) {
 			ctimer->next = timer;
@@ -149,24 +144,21 @@ static void _rearrange_timer(struct IOTimerDescriptor *timer) {
 	if(ctimer == NULL)
 		iotimer_sorted_descriptors = timer;
 	timer->flags |= IOTIMERFLAG_IN_LIST;
-	IODESYNCHRONIZE(iotimer_sync);
 }
 
 void _destroy_timer(struct _IOTimerDescriptor *timer) {
 	if((timer->flags & IOTIMERFLAG_IN_LIST)) {
-		IOSYNCHRONIZE(iotimer_sync);
 		if(timer->prev == NULL)
 			iotimer_sorted_descriptors = timer->next;
 		else
 			timer->prev->next = timer->next;
 		if(timer->next != NULL)
 			timer->next->prev = timer->prev;
-		IODESYNCHRONIZE(iotimer_sync);
 	}
 	free(timer);
 }
 
-static void _autoreload_timer(struct IOTimerDescriptor *timer) {
+static void _autoreload_timer(struct _IOTimerDescriptor *timer) {
 	timer->timeout.tv_usec += timer->autoreload.tv_usec;
 	timer->timeout.tv_sec += timer->autoreload.tv_sec;
 	if(timer->timeout.tv_usec > 1000000) {
@@ -174,5 +166,36 @@ static void _autoreload_timer(struct IOTimerDescriptor *timer) {
 		timer->timeout.tv_usec %= 1000000;
 	}
 	_rearrange_timer(timer);
+}
+
+void _trigger_timer() {
+	struct timeval now;
+	_trigger_timer_start:
+	gettimeofday(&now, NULL);
+	
+	struct _IOTimerDescriptor *timer = iotimer_sorted_descriptors;
+	if(!timer || timeval_is_bigger(timer->timeout, now)) {
+		return;
+	}
+	iotimer_sorted_descriptors = timer->next;
+	if(timer->next != NULL)
+		timer->next->prev = timer->prev;
+	timer->flags &= ~IOTIMERFLAG_IN_LIST;
+	
+	if((timer->flags & IOTIMERFLAG_PERIODIC))
+		_autoreload_timer(timer);
+	
+	if(timer->flags & IOTIMERFLAG_PARENT_PUBLIC) {
+		struct IOTimerDescriptor *descriptor = timer->parent;
+		if(descriptor->callback)
+			descriptor->callback(descriptor);
+		if(!(timer->flags & IOTIMERFLAG_PERIODIC))
+			iotimer_destroy(descriptor);
+	} else {
+		if(!(timer->flags & IOTIMERFLAG_PERIODIC))
+			_destroy_timer(timer);
+	}
+	
+	goto _trigger_timer_start;
 }
 

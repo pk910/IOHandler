@@ -1,4 +1,4 @@
-/* IOLog.h - IOMultiplexer v2
+/* IOHandler.h - IOMultiplexer v2
  * Copyright (C) 2014  Philipp Kreil (pk910)
  * 
  * This program is free software: you can redistribute it and/or modify
@@ -14,25 +14,17 @@
  * You should have received a copy of the GNU General Public License 
  * along with this program. If not, see <http://www.gnu.org/licenses/>. 
  */
-#ifndef _IOInternal_h
-#define _IOInternal_h
-#ifndef _IOHandler_internals
-#include "IOHandler.h"
-#else
-enum IOLogType;
-
-void iolog_init();
-void iolog_trigger(enum IOLogType type, char *text, ...);
+#ifndef _IOHandler_h
+#define _IOHandler_h
+#include "IOHandler_config.h"
+#ifdef _IOHandler_internals
 
 #endif
 
-enum IOLogType {
-    IOLOG_DEBUG,
-    IOLOG_WARNING,
-    IOLOG_ERROR,
-    IOLOG_FATAL
-};
+void iohandler_init();
+void iohandler_run();
+void iohandler_stop();
 
-/* TODO: Functions to get messages from IOLog */
+void iohandler_set_gc(int enabled); /* default: enabled */
 
 #endif

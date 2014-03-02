@@ -18,11 +18,12 @@
 #include "IOInternal.h"
 #include "IOHandler.h"
 #include "IOGarbageCollector.h"
+#include "IOLog.h"
 
-#define timeval_is_bigger(x,y) ((x.tv_sec > y.tv_sec) || (x.tv_sec == y.tv_sec && x.tv_usec > y.tv_usec))
-#define timeval_is_smaler(x,y) ((x.tv_sec < y.tv_sec) || (x.tv_sec == y.tv_sec && x.tv_usec < y.tv_usec))
+#include <sys/time.h>
+#include <stdlib.h>
 
-static struct IOGCObject {
+struct IOGCObject {
 	void *object;
 	iogc_free *free_callback;
 	struct timeval timeout;
@@ -30,16 +31,11 @@ static struct IOGCObject {
 	struct IOGCObject *next;
 };
 
-#ifdef HAVE_PTHREAD_H
-static pthread_mutex_t iogc_sync;
-#endif
-
 static int iogc_enabled = 1;
 static struct timeval iogc_timeout;
 static struct IOGCObject *first_object = NULL, *last_object = NULL;
 
 void iogc_init() {
-	IOTHREAD_MUTEX_INIT(iogc_sync);
 	iogc_timeout.tv_usec = 0;
 	iogc_timeout.tv_sec = 10;
 }
@@ -76,25 +72,31 @@ void iogc_add_callback(void *object, iogc_free *free_callback) {
 	obj->object = object;
 	obj->free_callback = free_callback;
 	gettimeofday(&obj->timeout, NULL);
+	obj->timeout.tv_sec += IOGC_TIMEOUT;
 	
+	obj->next = NULL;
+	if(last_object)
+		last_object->next = obj;
+	else
+		first_object = obj;
+	last_object = obj;
 }
 
 void iogc_exec() {
-	struct timeval ctime;
-	gettimeofday(&ctime, NULL);
+	struct timeval now;
+	gettimeofday(&now, NULL);
 	
 	struct IOGCObject *obj, *next_obj;
-	for(obj = objects; obj; obj = next_obj) {
-		if(timeval_is_smaler(obj->timeout, ctime)) {
+	for(obj = first_object; obj; obj = next_obj) {
+		if(timeval_is_smaler(obj->timeout, now)) {
 			next_obj = obj->next;
 			if(obj->free_callback)
 				obj->free_callback(obj->object);
 			else
 				free(obj->object);
 			free(obj);
-		} else {
-			objects = obj;
+		} else
 			break;
-		}
 	}
+	first_object = obj;
 }

@@ -19,9 +19,14 @@
 #include "IOHandler.h"
 #include "IOLog.h"
 
+#include <stdarg.h>
+#include <stdio.h>
+
 void iolog_init() {
 
 }
+
+#define MAXLOG 1024
 
 void iolog_trigger(enum IOLogType type, char *text, ...) {
     va_list arg_list;
@@ -35,5 +40,9 @@ void iolog_trigger(enum IOLogType type, char *text, ...) {
     logBuf[pos] = '\n';
     logBuf[pos+1] = '\0';
     
-    
+    printf("%s", logBuf);
+}
+
+void iolog_register_callback(iolog_callback *callback) {
+
 }
