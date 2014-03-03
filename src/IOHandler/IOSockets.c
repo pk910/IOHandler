@@ -56,9 +56,11 @@ static void iosocket_increase_buffer(struct IOSocketBuffer *iobuf, size_t requir
 static int iosocket_parse_address(const char *hostname, struct IODNSAddress *addr, int records);
 static int iosocket_lookup_hostname(struct _IOSocket *iosock, const char *hostname, int records, int bindaddr);
 static int iosocket_lookup_apply(struct _IOSocket *iosock, int noip6);
+static void socket_lookup_clear(struct _IOSocket *iosock);
 static void iosocket_connect_finish(struct _IOSocket *iosock);
 static void iosocket_listen_finish(struct _IOSocket *iosock);
 static int iosocket_try_write(struct _IOSocket *iosock);
+static void iosocket_trigger_event(struct IOSocketEvent *event);
 
 #ifdef WIN32
 static int close(int fd) {
@@ -131,6 +133,8 @@ void _free_socket(struct _IOSocket *iosock) {
 		free(iosock->bind.addr.address);
 	if(iosock->dest.addr.addresslen)
 		free(iosock->dest.addr.address);
+	if(iosock->bind.addrlookup || iosock->dest.addrlookup)
+		socket_lookup_clear(iosock);
 	if(iosock->readbuf.buffer)
 		free(iosock->readbuf.buffer);
 	if(iosock->writebuf.buffer)
@@ -266,9 +270,10 @@ void iosocket_lookup_callback(struct IOSocketDNSLookup *lookup, struct IODNSEven
 		int ret;
 		ret = iosocket_lookup_apply(iosock, 0);
 		if(ret) { //if ret=0 an error occured in iosocket_lookup_apply and we should stop here.
-			if((iosock->socket_flags & IOSOCKETFLAG_LISTENING))
+			if((iosock->socket_flags & IOSOCKETFLAG_LISTENING)) {
+				socket_lookup_clear(iosock);
 				iosocket_listen_finish(iosock);
-			else
+			} else
 				iosocket_connect_finish(iosock);
 		}
 	}
@@ -285,7 +290,7 @@ static int iosocket_lookup_apply(struct _IOSocket *iosock, int noip6) {
 		iosock->socket_flags |= IOSOCKETFLAG_DNSERROR;
 		sprintf(errbuf, "Internal Error");
 		iolog_trigger(IOLOG_ERROR, "trying to apply lookup results without any lookups processed in %s:%d", __FILE__, __LINE__);
-		goto iosocket_lookup_clear;
+		goto iosocket_lookup_apply_end;
 	}
 	
 	struct IODNSResult *result;
@@ -313,41 +318,41 @@ static int iosocket_lookup_apply(struct _IOSocket *iosock, int noip6) {
 	if(bind_lookup && (bind_numip6 == 0 && bind_numip4 == 0)) {
 		iosock->socket_flags |= IOSOCKETFLAG_DNSERROR;
 		sprintf(errbuf, "could not lookup bind address (%s)", bind_lookup->hostname);
-		goto iosocket_lookup_clear;
+		goto iosocket_lookup_apply_end;
 	} else if(dest_lookup && (dest_numip6 == 0 && dest_numip4 == 0)) {
 		iosock->socket_flags |= IOSOCKETFLAG_DNSERROR;
 		sprintf(errbuf, "could not lookup destination address (%s)", dest_lookup->hostname);
-		goto iosocket_lookup_clear;
+		goto iosocket_lookup_apply_end;
 	} else if(bind_lookup && dest_lookup) {
 		if(bind_numip6 > 0 && dest_numip6 > 0)
 			useip6 = 1;
-		else if(bind_numip4 > 0 && dest_numip4 > 0)
+		if(bind_numip4 > 0 && dest_numip4 > 0)
 			useip4 = 1;
-		else {
-			iosock->socket_flags |= IOSOCKETFLAG_DNSERROR;
-			sprintf(errbuf, "could not lookup adresses of the same IP family for bind and destination host. (bind: %d ip4, %d ip6 | dest: %d ip4, %d ip6)", bind_numip4, bind_numip6, dest_numip4, dest_numip6);
-			goto iosocket_lookup_clear;
-		}
 	} else if(bind_lookup) {
 		if(bind_numip6)
 			useip6 = 1;
-		else if(bind_numip4)
+		if(bind_numip4)
 			useip4 = 1;
 	} else if(dest_lookup) {
 		if(dest_numip6)
 			useip6 = 1;
-		else if(dest_numip4)
+		if(dest_numip4)
 			useip4 = 1;
 	}
 	
 	int usetype = 0;
-	if(useip6) {
+	if(useip6 && !noip6) {
 		usetype = IODNS_RECORD_AAAA;
 		iosock->socket_flags |= IOSOCKETFLAG_IPV6SOCKET;
+		if(useip4)
+			iosock->socket_flags |= IOSOCKETFLAG_RECONNECT_IPV4;
 	} else if(useip4) {
 		usetype = IODNS_RECORD_A;
+		iosock->socket_flags &= ~(IOSOCKETFLAG_IPV6SOCKET | IOSOCKETFLAG_RECONNECT_IPV4);
 	} else {
-		//should already be handled
+		iosock->socket_flags |= IOSOCKETFLAG_DNSERROR;
+		sprintf(errbuf, "could not lookup adresses of the same IP family for bind and destination host. (bind: %d ip4, %d ip6 | dest: %d ip4, %d ip6)", bind_numip4, bind_numip6, dest_numip4, dest_numip6);
+		goto iosocket_lookup_apply_end;
 	}
 	
 	#define IOSOCKET_APPLY_COPYADDR(type) \
@@ -358,19 +363,19 @@ static int iosocket_lookup_apply(struct _IOSocket *iosock, int noip6) {
 		iosock->type.addr.addresslen = 0; \
 		iosock->socket_flags |= IOSOCKETFLAG_DNSERROR; \
 		sprintf(errbuf, "could not allocate memory for dns information"); \
-		goto iosocket_lookup_clear; \
+		goto iosocket_lookup_apply_end; \
 	} \
 	memcpy(iosock->type.addr.address, result->result.addr.address, result->result.addr.addresslen);
 	
 	
 	if(bind_lookup) {
-		int usenum = (useip6 ? bind_numip6 : bind_numip4);
+		int usenum = ((usetype == IODNS_RECORD_AAAA) ? bind_numip6 : bind_numip4);
 		usenum = rand() % usenum;
 		for(result = bind_lookup->result; result; result = result->next) {
 			if((result->type & usetype)) {
 				if(usenum == 0) {
-					inet_ntop((useip6 ? AF_INET6 : AF_INET), (useip6 ? (void *)(&((struct sockaddr_in6 *)result->result.addr.address)->sin6_addr) : (void *)(&((struct sockaddr_in *)result->result.addr.address)->sin_addr)), errbuf, sizeof(errbuf));
-					iolog_trigger(IOLOG_DEBUG, "using IPv%s Address (%s) as bind address", (useip6 ? "6" : "4"), errbuf);
+					inet_ntop(((usetype == IODNS_RECORD_AAAA) ? AF_INET6 : AF_INET), ((usetype == IODNS_RECORD_AAAA) ? (void *)(&((struct sockaddr_in6 *)result->result.addr.address)->sin6_addr) : (void *)(&((struct sockaddr_in *)result->result.addr.address)->sin_addr)), errbuf, sizeof(errbuf));
+					iolog_trigger(IOLOG_DEBUG, "using IPv%s Address (%s) as bind address", ((usetype == IODNS_RECORD_AAAA) ? "6" : "4"), errbuf);
 					IOSOCKET_APPLY_COPYADDR(bind)
 					break;
 				}
@@ -381,13 +386,13 @@ static int iosocket_lookup_apply(struct _IOSocket *iosock, int noip6) {
 		iosock->bind.addr.addresslen = 0;
 	
 	if(dest_lookup) {
-		int usenum = (useip6 ? dest_numip6 : dest_numip4);
+		int usenum = ((usetype == IODNS_RECORD_AAAA) ? dest_numip6 : dest_numip4);
 		usenum = rand() % usenum;
 		for(result = dest_lookup->result; result; result = result->next) {
 			if((result->type & usetype)) {
 				if(usenum == 0) {
-					inet_ntop((useip6 ? AF_INET6 : AF_INET), (useip6 ? (void *)(&((struct sockaddr_in6 *)result->result.addr.address)->sin6_addr) : (void *)(&((struct sockaddr_in *)result->result.addr.address)->sin_addr)), errbuf, sizeof(errbuf));
-					iolog_trigger(IOLOG_DEBUG, "using IPv%s Address (%s) as dest address", (useip6 ? "6" : "4"), errbuf);
+					inet_ntop(((usetype == IODNS_RECORD_AAAA) ? AF_INET6 : AF_INET), ((usetype == IODNS_RECORD_AAAA) ? (void *)(&((struct sockaddr_in6 *)result->result.addr.address)->sin6_addr) : (void *)(&((struct sockaddr_in *)result->result.addr.address)->sin_addr)), errbuf, sizeof(errbuf));
+					iolog_trigger(IOLOG_DEBUG, "using IPv%s Address (%s) as dest address", ((usetype == IODNS_RECORD_AAAA) ? "6" : "4"), errbuf);
 					IOSOCKET_APPLY_COPYADDR(dest)
 					break;
 				}
@@ -397,24 +402,46 @@ static int iosocket_lookup_apply(struct _IOSocket *iosock, int noip6) {
 	} else
 		iosock->dest.addr.addresslen = 0;
 	
-	iosocket_lookup_clear:
+	iosocket_lookup_apply_end:
+	
+	if((iosock->socket_flags & IOSOCKETFLAG_DNSERROR)) {
+		// TODO: trigger error
+		iolog_trigger(IOLOG_ERROR, "error while trying to apply dns lookup information: %s", errbuf);
+		
+		if((iosock->socket_flags & IOSOCKETFLAG_PARENT_PUBLIC)) {
+			//trigger event
+			struct IOSocket *iosocket = iosock->parent;
+			
+			struct IOSocketEvent callback_event;
+			callback_event.type = IOSOCKETEVENT_DNSFAILED;
+			callback_event.socket = iosocket;
+			callback_event.data.recv_str = errbuf;
+			iosocket_trigger_event(&callback_event);
+			
+			iosocket_close(iosocket);
+		} else {
+			// TODO: IODNS Callback
+		}
+		return 0;
+	} else
+		return 1;
+}
+
+static void socket_lookup_clear(struct _IOSocket *iosock) {
+	struct IOSocketDNSLookup *bind_lookup = ((iosock->socket_flags & IOSOCKETFLAG_DNSDONE_BINDDNS) ? iosock->bind.addrlookup : NULL);
+	struct IOSocketDNSLookup *dest_lookup = ((iosock->socket_flags & IOSOCKETFLAG_DNSDONE_DESTDNS) ? iosock->dest.addrlookup : NULL);
 	if(bind_lookup) {
 		if(bind_lookup->result)
 			iodns_free_result(bind_lookup->result);
 		free(bind_lookup);
+		iosock->bind.addrlookup = NULL;
 	}
 	if(dest_lookup) {
 		if(dest_lookup->result)
 			iodns_free_result(dest_lookup->result);
 		free(dest_lookup);
+		iosock->dest.addrlookup = NULL;
 	}
-	
-	if((iosock->socket_flags & IOSOCKETFLAG_DNSERROR)) {
-		// TODO: trigger error
-		
-		return 0;
-	} else
-		return 1;
 }
 
 static void iosocket_prepare_fd(int sockfd) {
@@ -440,9 +467,10 @@ static void iosocket_prepare_fd(int sockfd) {
 		fcntl(sockfd, F_SETFD, fcntl_flags|FD_CLOEXEC);
 	}
 	#else
-	/* I hope you're using the Win32 backend or something else that
-	 * automatically marks the file descriptor non-blocking...
-	 */
+	{
+		unsigned long ulong = 1;
+		ioctlsocket(sockfd, FIONBIO, &ulong);
+	}
 	#endif
 }
 
@@ -488,7 +516,9 @@ static void iosocket_connect_finish(struct _IOSocket *iosock) {
 	
 	iosocket_prepare_fd(sockfd);
 	
-	connect(sockfd, iosock->dest.addr.address, iosock->dest.addr.addresslen); //returns EINPROGRESS here (nonblocking)
+	int ret = connect(sockfd, iosock->dest.addr.address, iosock->dest.addr.addresslen); //returns EINPROGRESS here (nonblocking)
+	iolog_trigger(IOLOG_DEBUG, "connecting socket (connect: %d)", ret);
+	
 	iosock->fd = sockfd;
 	iosock->socket_flags |= IOSOCKETFLAG_CONNECTING;
 	
@@ -856,13 +886,22 @@ void iosocket_events_callback(struct _IOSocket *iosock, int readable, int writea
 			
 		} else if((iosock->socket_flags & IOSOCKETFLAG_CONNECTING)) {
 			if(readable) { //could not connect
-				callback_event.type = IOSOCKETEVENT_NOTCONNECTED;
-				/*
-				socklen_t arglen = sizeof(callback_event.data.errid);
-				if (getsockopt(iosock->fd, SOL_SOCKET, SO_ERROR, &callback_event.data.errid, &arglen) < 0)
-					callback_event.data.errid = errno;
-				*/
-				iosock->socket_flags |= IOSOCKETFLAG_DEAD;
+				if((iosock->socket_flags & (IOSOCKETFLAG_IPV6SOCKET | IOSOCKETFLAG_RECONNECT_IPV4)) == (IOSOCKETFLAG_IPV6SOCKET | IOSOCKETFLAG_RECONNECT_IPV4)) {
+					iolog_trigger(IOLOG_DEBUG, "connecting to IPv6 host (%s) failed. trying to connect using IPv4.", iosock->dest.addrlookup->hostname);
+					iosocket_deactivate(iosock);
+					if(iosocket_lookup_apply(iosock, 1)) { //if ret=0 an error occured in iosocket_lookup_apply and we should stop here.
+						iosocket_connect_finish(iosock);
+						socket_lookup_clear(iosock);
+					}
+				} else {
+					callback_event.type = IOSOCKETEVENT_NOTCONNECTED;
+					/*
+					socklen_t arglen = sizeof(callback_event.data.errid);
+					if (getsockopt(iosock->fd, SOL_SOCKET, SO_ERROR, &callback_event.data.errid, &arglen) < 0)
+						callback_event.data.errid = errno;
+					*/
+					iosock->socket_flags |= IOSOCKETFLAG_DEAD;
+				}
 			} else if(writeable) { //connection established
 				iosocket->status = IOSOCKET_CONNECTED;
 				if((iosock->socket_flags & IOSOCKETFLAG_SSLSOCKET)) {
@@ -872,6 +911,7 @@ void iosocket_events_callback(struct _IOSocket *iosock, int readable, int writea
 				
 				callback_event.type = IOSOCKETEVENT_CONNECTED;
 				iosock->socket_flags &= ~IOSOCKETFLAG_CONNECTING;
+				socket_lookup_clear(iosock);
 				engine->update(iosock);
 				
 				//initialize readbuf

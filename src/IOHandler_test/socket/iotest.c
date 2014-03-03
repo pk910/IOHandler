@@ -30,7 +30,7 @@ int main(int argc, char *argv[]) {
 	
     iolog_register_callback(io_log);
     
-    irc_iofd = iosocket_connect_flags("irc.nextirc.net", 6667, 0, NULL, io_callback, IOSOCKET_ADDR_IPV4);
+    irc_iofd = iosocket_connect("irc.nextirc.net", 6667, 0, NULL, io_callback);
     irc_iofd->parse_delimiter = 1;
 	irc_iofd->delimiters[0] = '\n';
 	irc_iofd->delimiters[1] = '\r';

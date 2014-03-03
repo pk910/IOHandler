@@ -67,7 +67,14 @@ static LRESULT CALLBACK engine_win32_wndproc(HWND hWnd, UINT uMsg, WPARAM wParam
 			iosock = engine_win32_get_iosock(wParam);
 			events = WSAGETSELECTEVENT(lParam);
 			
-			iosocket_events_callback(iosock, (events & (FD_READ | FD_ACCEPT | FD_CLOSE)) != 0, (events & (FD_WRITE | FD_CONNECT)) != 0);
+			if((events & FD_CONNECT)) {
+				int err;
+				if((err = WSAGETSELECTERROR(lParam)))
+					iosocket_events_callback(iosock, err, 0);
+				else
+					iosocket_events_callback(iosock, 0, 1);
+			} else
+				iosocket_events_callback(iosock, (events & (FD_READ | FD_ACCEPT | FD_CLOSE)) != 0, (events & FD_WRITE) != 0);
 			return 0;
 		case WM_QUIT:
 			return 0;

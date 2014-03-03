@@ -75,6 +75,7 @@ extern struct _IOSocket *iosocket_last;
 #define IOSOCKETFLAG_CONNECTING       0x4000
 #define IOSOCKETFLAG_INCOMING         0x8000 /* incoming (accepted) connection */
 #define IOSOCKETFLAG_DEAD            0x10000
+#define IOSOCKETFLAG_RECONNECT_IPV4  0x20000 /* possible fallback to ipv4 connect if ipv6 fails */
 
 struct IOSocketDNSLookup {
 	unsigned int bindlookup : 1;
@@ -89,11 +90,11 @@ struct _IOSocket {
 	
 	unsigned int socket_flags : 24;
 	
-	union {
+	struct {
 		struct IODNSAddress addr;
 		struct IOSocketDNSLookup *addrlookup;
 	} bind;
-	union {
+	struct {
 		struct IODNSAddress addr;
 		struct IOSocketDNSLookup *addrlookup;
 	} dest;
@@ -139,7 +140,7 @@ enum IOSocketEventType {
     IOSOCKETEVENT_CLOSED, /* client socket lost connection (errid valid) */
     IOSOCKETEVENT_ACCEPT, /* server socket accepted new connection (accept_socket valid) */
     IOSOCKETEVENT_SSLFAILED, /* failed to initialize SSL session */
-	IOSOCKETEVENT_DNSFAILED /* failed to lookup DNS information */
+	IOSOCKETEVENT_DNSFAILED /* failed to lookup DNS information (recv_str contains error message) */
 };
 
 struct IOSocket {
@@ -181,6 +182,6 @@ struct IOSocket *iosocket_listen_ssl_flags(const char *hostname, unsigned int po
 void iosocket_write(struct IOSocket *iosocket, const char *line);
 void iosocket_send(struct IOSocket *iosocket, const char *data, size_t datalen);
 void iosocket_printf(struct IOSocket *iosocket, const char *text, ...);
-void iohandler_close(struct IOSocket *iosocket);
+void iosocket_close(struct IOSocket *iosocket);
 
 #endif

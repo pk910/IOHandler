@@ -24,6 +24,9 @@
 #include "IODNSLookup.h"
 #include "IOSockets.h"
 
+#include <stdlib.h>
+#include <time.h>
+
 /* compat */
 #include "compat/utime.h"
 
@@ -36,6 +39,8 @@ static int iohandler_state = 0;
 void iohandler_init() {
 	if((iohandler_state & IOHANDLER_STATE_INITIALIZED)) 
 		return;
+	
+	srand(time(NULL));
 	
 	iolog_init();
 	iogc_init();
