@@ -32,6 +32,7 @@
 #include <netinet/ip.h> 
 #include <arpa/inet.h>
 #include <unistd.h>
+#include <fcntl.h>
 #endif
 #include "compat/inet.h"
 #include <stdio.h>
@@ -466,7 +467,7 @@ static void iosocket_prepare_fd(int sockfd) {
 		fcntl_flags = fcntl(sockfd, F_GETFD);
 		fcntl(sockfd, F_SETFD, fcntl_flags|FD_CLOEXEC);
 	}
-	#else
+	#elif defined(FIONBIO)
 	{
 		unsigned long ulong = 1;
 		ioctlsocket(sockfd, FIONBIO, &ulong);

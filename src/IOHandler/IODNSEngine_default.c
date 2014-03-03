@@ -29,6 +29,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netdb.h>
+#include <arpa/inet.h>
 #endif
 #include "compat/inet.h"
 #include <stdlib.h>
