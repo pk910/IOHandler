@@ -30,10 +30,7 @@ int main(int argc, char *argv[]) {
 	
     iolog_register_callback(io_log);
     
-    irc_iofd = iosocket_connect("irc.nextirc.net", 6667, 0, NULL, io_callback);
-    irc_iofd->parse_delimiter = 1;
-	irc_iofd->delimiters[0] = '\n';
-	irc_iofd->delimiters[1] = '\r';
+    irc_iofd = iosocket_connect("test.pk910.de", 443, 1, NULL, io_callback);
 	
 	iohandler_run();
 	
@@ -44,12 +41,20 @@ static IOSOCKET_CALLBACK(io_callback) {
     switch(event->type) {
         case IOSOCKETEVENT_CONNECTED:
             printf("[connect]\n");
+            iosocket_printf(event->socket, "GET / HTTP/1.1\r\n");
+            iosocket_printf(event->socket, "Host: test.pk910.de\r\n");
+            iosocket_printf(event->socket, "\r\n");
             break;
         case IOSOCKETEVENT_CLOSED:
             printf("[disconnect]\n");
             break;
         case IOSOCKETEVENT_RECV:
-            printf("[in] %s\n", event->data.recv_str);
+			{
+				struct IOSocketBuffer *recv_buf = event->data.recv_buf;
+				write(1, recv_buf->buffer, recv_buf->bufpos);
+				recv_buf->bufpos = 0;
+				printf("\n");
+            }
             break;
         
         default:

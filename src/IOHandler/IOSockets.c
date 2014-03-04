@@ -101,6 +101,7 @@ void _init_sockets() {
 	#endif
 	
 	iosockets_init_engine();
+	iossl_init();
 }
 
 
@@ -140,6 +141,8 @@ void _free_socket(struct _IOSocket *iosock) {
 		free(iosock->readbuf.buffer);
 	if(iosock->writebuf.buffer)
 		free(iosock->writebuf.buffer);
+	if((iosock->socket_flags & IOSOCKETFLAG_SSLSOCKET))
+		iossl_disconnect(iosock);
 	
 	free(iosock);
 }
@@ -622,7 +625,8 @@ struct _IOSocket *iosocket_accept_client(struct _IOSocket *iosock) {
 	if((iosock->socket_flags & IOSOCKETFLAG_SSLSOCKET)) {
 		new_iosocket->ssl = 1;
 		new_iosock->socket_flags |= IOSOCKETFLAG_SSLSOCKET;
-		//TODO: SSL Handshake
+		
+		iossl_client_accepted(iosock, new_iosock);
 	}
 	
 	iosocket_activate(new_iosock);
@@ -717,12 +721,6 @@ struct IOSocket *iosocket_listen_flags(const char *hostname, unsigned int port, 
 	iosock->parent = iodescriptor;
 	iosock->socket_flags |= IOSOCKETFLAG_PARENT_PUBLIC | IOSOCKETFLAG_LISTENING;
 	iosock->port = port;
-	/*
-	if(ssl) {
-		iodescriptor->ssl = 1;
-		iosock->socket_flags |= IOSOCKETFLAG_SSLSOCKET;
-	}
-	*/
 	
 	switch(iosocket_parse_address(hostname, &iosock->bind.addr, flags)) {
 	case -1:
@@ -748,8 +746,11 @@ struct IOSocket *iosocket_listen_ssl(const char *hostname, unsigned int port, co
 }
 
 struct IOSocket *iosocket_listen_ssl_flags(const char *hostname, unsigned int port, const char *certfile, const char *keyfile, iosocket_callback *callback, int flags) {
-	//TODO: SSL
-	return NULL;
+	struct IOSocket *iosocket = iosocket_listen_flags(hostname, port, callback, flags);
+	struct _IOSocket *iosock = iosocket->iosocket;
+	iosock->socket_flags |= IOSOCKETFLAG_SSLSOCKET | IOSOCKETFLAG_SSL_HANDSHAKE;
+	iossl_listen(iosock, certfile, keyfile);
+	return iosocket;
 }
 
 void iosocket_close(struct IOSocket *iosocket) {
@@ -777,9 +778,8 @@ void iosocket_close(struct IOSocket *iosocket) {
 		iosocket_try_write(iosock);
 	}
 	//close IOSocket
-	if(iosock->sslnode) {
-		//TODO: SSL
-	}
+	if((iosock->socket_flags & IOSOCKETFLAG_SSLSOCKET))
+		iossl_disconnect(iosock);
 	if(iosock->fd)
 		close(iosock->fd);
 	_free_socket(iosock);
@@ -789,13 +789,13 @@ void iosocket_close(struct IOSocket *iosocket) {
 }
 
 static int iosocket_try_write(struct _IOSocket *iosock) {
-	if(!iosock->writebuf.bufpos) return 0;
+	if(!iosock->writebuf.bufpos && !(iosock->socket_flags & IOSOCKETFLAG_SSL_WRITEHS)) 
+		return 0;
 	iolog_trigger(IOLOG_DEBUG, "write writebuf (%d bytes) to socket (fd: %d)", iosock->writebuf.bufpos, iosock->fd);
 	int res;
-	if(iosock->sslnode) {
-		/* res = iohandler_ssl_write(iofd, iofd->writebuf.buffer, iofd->writebuf.bufpos); */
-		// TODO
-	} else
+	if((iosock->socket_flags & IOSOCKETFLAG_SSLSOCKET))
+		res = iossl_write(iosock, iosock->writebuf.buffer, iosock->writebuf.bufpos);
+	else
 		res = send(iosock->fd, iosock->writebuf.buffer, iosock->writebuf.bufpos, 0);
 	if(res < 0) {
 		if (errno != EAGAIN && errno != EWOULDBLOCK)
@@ -846,12 +846,11 @@ void iosocket_printf(struct IOSocket *iosocket, const char *text, ...) {
 	int pos;
 	sendBuf[0] = '\0';
 	va_start(arg_list, text);
-	pos = vsnprintf(sendBuf, IOSOCKET_PRINTF_LINE_LEN - 2, text, arg_list);
+	pos = vsnprintf(sendBuf, IOSOCKET_PRINTF_LINE_LEN - 1, text, arg_list);
 	va_end(arg_list);
-	if (pos < 0 || pos > (IOSOCKET_PRINTF_LINE_LEN - 2)) pos = IOSOCKET_PRINTF_LINE_LEN - 2;
-	sendBuf[pos] = '\n';
-	sendBuf[pos+1] = '\0';
-	iosocket_send(iosocket, sendBuf, pos+1);
+	if (pos < 0 || pos > (IOSOCKET_PRINTF_LINE_LEN - 1)) pos = IOSOCKET_PRINTF_LINE_LEN - 1;
+	sendBuf[pos] = '\0';
+	iosocket_send(iosocket, sendBuf, pos);
 }
 
 
@@ -871,7 +870,40 @@ void iosocket_events_callback(struct _IOSocket *iosock, int readable, int writea
 		callback_event.socket = iosocket;
 		
 		if((iosock->socket_flags & IOSOCKETFLAG_SSL_HANDSHAKE)) {
-			//TODO: SSL
+			if(readable || writeable) {
+				if((iosock->socket_flags & IOSOCKETFLAG_INCOMING)) 
+					iossl_server_handshake(iosock);
+				else
+					iossl_client_handshake(iosock);
+				engine->update(iosock);
+			} else if((iosock->socket_flags & IOSOCKETFLAG_LISTENING)) {
+				//TODO: SSL init error
+			} else if((iosock->socket_flags & IOSOCKETFLAG_INCOMING)) {
+				if((iosock->socket_flags & IOSOCKETFLAG_SSL_ESTABLISHED)) {
+					//incoming SSL connection accepted
+					iosock->socket_flags &= ~IOSOCKETFLAG_SSL_HANDSHAKE;
+					callback_event.type = IOSOCKETEVENT_ACCEPT;
+					callback_event.data.accept_socket = iosock->parent;
+				} else {
+					//incoming SSL connection failed, simply drop
+					iosock->socket_flags |= IOSOCKETFLAG_DEAD;
+					iolog_trigger(IOLOG_ERROR, "SSL Handshake failed for incoming connection. Dropping fd %d", iosock->fd);
+				}
+			} else {
+				// SSL Backend finished
+				if((iosock->socket_flags & IOSOCKETFLAG_SSL_ESTABLISHED)) {
+					iosocket->status = IOSOCKET_CONNECTED;
+					iosock->socket_flags &= ~IOSOCKETFLAG_SSL_HANDSHAKE;
+					callback_event.type = IOSOCKETEVENT_CONNECTED;
+					engine->update(iosock);
+					
+					//initialize readbuf
+					iosocket_increase_buffer(&iosock->readbuf, 1024);
+				} else {
+					callback_event.type = IOSOCKETEVENT_NOTCONNECTED;
+					iosock->socket_flags |= IOSOCKETFLAG_DEAD;
+				}
+			}
 		} else if((iosock->socket_flags & IOSOCKETFLAG_LISTENING)) {
 			if(readable) {
 				//new client connected
@@ -904,32 +936,43 @@ void iosocket_events_callback(struct _IOSocket *iosock, int readable, int writea
 					iosock->socket_flags |= IOSOCKETFLAG_DEAD;
 				}
 			} else if(writeable) { //connection established
-				iosocket->status = IOSOCKET_CONNECTED;
-				if((iosock->socket_flags & IOSOCKETFLAG_SSLSOCKET)) {
-					//TODO: SSL Handshake
-					return;
-				}
-				
-				callback_event.type = IOSOCKETEVENT_CONNECTED;
 				iosock->socket_flags &= ~IOSOCKETFLAG_CONNECTING;
 				socket_lookup_clear(iosock);
+				if((iosock->socket_flags & IOSOCKETFLAG_SSLSOCKET)) {
+					iolog_trigger(IOLOG_DEBUG, "SSL client socket connected. Stating SSL handshake...");
+					iossl_connect(iosock);
+					engine->update(iosock);
+					return;
+				}
+				iosocket->status = IOSOCKET_CONNECTED;
+				
+				callback_event.type = IOSOCKETEVENT_CONNECTED;
 				engine->update(iosock);
 				
 				//initialize readbuf
 				iosocket_increase_buffer(&iosock->readbuf, 1024);
 			}
 		} else {
-			if(readable) {
+			int ssl_rehandshake = 0;
+			if((iosock->socket_flags & IOSOCKETFLAG_SSLSOCKET)) {
+				if((iosock->socket_flags & IOSOCKETFLAG_SSL_READHS))
+					ssl_rehandshake = 1;
+				else if((iosock->socket_flags & IOSOCKETFLAG_SSL_WRITEHS))
+					ssl_rehandshake = 2;
+			}
+			if((readable && ssl_rehandshake == 0) || ssl_rehandshake == 1) {
 				int bytes;
 				if(iosock->readbuf.buflen - iosock->readbuf.bufpos >= 128)
 					iosocket_increase_buffer(&iosock->readbuf, iosock->readbuf.buflen + 1024);
-				if((iosock->socket_flags & IOSOCKETFLAG_SSLSOCKET)) {
-					//TODO: SSL read
-				} else 
+				if((iosock->socket_flags & IOSOCKETFLAG_SSLSOCKET))
+					bytes = iossl_read(iosock, iosock->readbuf.buffer + iosock->readbuf.bufpos, iosock->readbuf.buflen - iosock->readbuf.bufpos);
+				else 
 					bytes = recv(iosock->fd, iosock->readbuf.buffer + iosock->readbuf.bufpos, iosock->readbuf.buflen - iosock->readbuf.bufpos, 0);
 					
 				if(bytes <= 0) {
-					if (errno != EAGAIN || errno != EWOULDBLOCK) {
+					if((iosock->socket_flags & (IOSOCKETFLAG_SSLSOCKET | IOSOCKETFLAG_SSL_READHS)) == (IOSOCKETFLAG_SSLSOCKET | IOSOCKETFLAG_SSL_READHS)) {
+						ssl_rehandshake = 1;
+					} else if (errno != EAGAIN || errno != EWOULDBLOCK) {
 						iosock->socket_flags |= IOSOCKETFLAG_DEAD;
 						
 						callback_event.type = IOSOCKETEVENT_CLOSED;
@@ -989,17 +1032,23 @@ void iosocket_events_callback(struct _IOSocket *iosock, int readable, int writea
 						callback_event.data.recv_buf = &iosock->readbuf;
 				}
 			}
-			if(writeable) {
+			if((writeable && ssl_rehandshake == 0) || ssl_rehandshake == 2) {
 				int bytes;
 				bytes = iosocket_try_write(iosock);
 				if(bytes < 0) {
-					iosock->socket_flags |= IOSOCKETFLAG_DEAD;
-					
-					callback_event.type = IOSOCKETEVENT_CLOSED;
-					callback_event.data.errid = errno;
+					if((iosock->socket_flags & (IOSOCKETFLAG_SSLSOCKET | IOSOCKETFLAG_SSL_WRITEHS)) == (IOSOCKETFLAG_SSLSOCKET | IOSOCKETFLAG_SSL_WRITEHS)) {
+						ssl_rehandshake = 1;
+					} else {
+						iosock->socket_flags |= IOSOCKETFLAG_DEAD;
+						
+						callback_event.type = IOSOCKETEVENT_CLOSED;
+						callback_event.data.errid = errno;
+					}
 				}
 			}
-			
+			if(ssl_rehandshake) {
+				engine->update(iosock);
+			}
 		}
 		if(callback_event.type != IOSOCKETEVENT_IGNORE)
 			iosocket_trigger_event(&callback_event);

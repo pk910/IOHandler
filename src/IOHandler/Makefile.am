@@ -14,6 +14,7 @@ libiohandler_a_SOURCES = compat/utime.c \
     IOGarbageCollector.c \
     IOLog.c \
     IOSockets.c \
+    IOSSLBackend.c \
     IOTimer.c
 
 noinst_LIBRARIES = libiohandler.a

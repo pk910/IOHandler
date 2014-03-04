@@ -71,11 +71,14 @@ extern struct _IOSocket *iosocket_last;
 #define IOSOCKETFLAG_SSLSOCKET        0x0400 /* use ssl after connecting */
 #define IOSOCKETFLAG_SSL_HANDSHAKE    0x0800 /* SSL Handshake in progress */
 #define IOSOCKETFLAG_SSL_WANTWRITE    0x1000
-#define IOSOCKETFLAG_SHUTDOWN         0x2000 /* disconnect pending */
-#define IOSOCKETFLAG_CONNECTING       0x4000
-#define IOSOCKETFLAG_INCOMING         0x8000 /* incoming (accepted) connection */
-#define IOSOCKETFLAG_DEAD            0x10000
-#define IOSOCKETFLAG_RECONNECT_IPV4  0x20000 /* possible fallback to ipv4 connect if ipv6 fails */
+#define IOSOCKETFLAG_SSL_READHS       0x2000 /* ssl read rehandshake */
+#define IOSOCKETFLAG_SSL_WRITEHS      0x4000 /* ssl write rehandshake */
+#define IOSOCKETFLAG_SSL_ESTABLISHED  0x8000
+#define IOSOCKETFLAG_SHUTDOWN        0x10000 /* disconnect pending */
+#define IOSOCKETFLAG_CONNECTING      0x20000
+#define IOSOCKETFLAG_INCOMING        0x40000 /* incoming (accepted) connection */
+#define IOSOCKETFLAG_DEAD            0x80000
+#define IOSOCKETFLAG_RECONNECT_IPV4 0x100000 /* possible fallback to ipv4 connect if ipv6 fails */
 
 struct IOSocketDNSLookup {
 	unsigned int bindlookup : 1;
@@ -116,7 +119,7 @@ void iosocket_loop(int usec);
 void iosocket_lookup_callback(struct IOSocketDNSLookup *lookup, struct IODNSEvent *event);
 void iosocket_events_callback(struct _IOSocket *iosock, int readable, int writeable);
 
-#define iosocket_wants_writes(IOSOCK) (IOSOCK->writebuf.bufpos || (IOSOCK->socket_flags & (IOSOCKETFLAG_CONNECTING | IOSOCKETFLAG_SSL_WANTWRITE)))
+#define iosocket_wants_writes(IOSOCK) ((IOSOCK->writebuf.bufpos && !(IOSOCK->socket_flags & (IOSOCKETFLAG_SSL_READHS | IOSOCKETFLAG_SSL_WRITEHS))) || (IOSOCK->socket_flags & (IOSOCKETFLAG_CONNECTING | IOSOCKETFLAG_SSL_WANTWRITE)))
 
 #endif
 
@@ -129,7 +132,8 @@ enum IOSocketStatus {
     IOSOCKET_CLOSED, /* descriptor is dead (socket waiting for removal or timer) */
     IOSOCKET_LISTENING, /* descriptor is waiting for connections (server socket) */
     IOSOCKET_CONNECTING, /* descriptor is waiting for connection approval (connecting client socket) */
-    IOSOCKET_CONNECTED /* descriptor is connected (connected client socket) */
+    IOSOCKET_CONNECTED, /* descriptor is connected (connected client socket) */
+	IOSOCKET_SSLHANDSHAKE /* descriptor is waiting for ssl (handshake) */
 };
 
 enum IOSocketEventType {
@@ -139,7 +143,6 @@ enum IOSocketEventType {
     IOSOCKETEVENT_NOTCONNECTED, /* client socket could not connect (errid valid) */
     IOSOCKETEVENT_CLOSED, /* client socket lost connection (errid valid) */
     IOSOCKETEVENT_ACCEPT, /* server socket accepted new connection (accept_socket valid) */
-    IOSOCKETEVENT_SSLFAILED, /* failed to initialize SSL session */
 	IOSOCKETEVENT_DNSFAILED /* failed to lookup DNS information (recv_str contains error message) */
 };
 
