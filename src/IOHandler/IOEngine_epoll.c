@@ -43,7 +43,7 @@ static void engine_epoll_add(struct _IOSocket *iosock) {
 	struct epoll_event evt;
 	int res;
 
-	evt.events = EPOLLHUP | EPOLLIN | (iosocket_wants_writes(iosock) ? EPOLLOUT : 0);
+	evt.events = EPOLLHUP | (iosocket_wants_reads(iosock) ? EPOLLIN : 0) | (iosocket_wants_writes(iosock) ? EPOLLOUT : 0);
 	evt.data.ptr = iosock;
 	res = epoll_ctl(epoll_fd, EPOLL_CTL_ADD, iosock->fd, &evt);
 	if(res < 0)
@@ -59,7 +59,7 @@ static void engine_epoll_update(struct _IOSocket *iosock) {
 	struct epoll_event evt;
 	int res;
 
-	evt.events = EPOLLHUP | EPOLLIN | (iosocket_wants_writes(iosock) ? EPOLLOUT : 0);
+	evt.events = EPOLLHUP | (iosocket_wants_reads(iosock) ? EPOLLIN : 0) | (iosocket_wants_writes(iosock) ? EPOLLOUT : 0);
 	evt.data.ptr = iosock;
 	res = epoll_ctl(epoll_fd, EPOLL_CTL_MOD, iosock->fd, &evt);
 	if(res < 0)

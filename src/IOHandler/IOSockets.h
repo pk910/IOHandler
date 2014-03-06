@@ -58,27 +58,39 @@ extern struct _IOSocket *iosocket_first;
 extern struct _IOSocket *iosocket_last;
 
 /* _IOSocket socket_flags */
-#define IOSOCKETFLAG_ACTIVE           0x0001
-#define IOSOCKETFLAG_LISTENING        0x0002
-#define IOSOCKETFLAG_PENDING_BINDDNS  0x0004
-#define IOSOCKETFLAG_PENDING_DESTDNS  0x0008
-#define IOSOCKETFLAG_DNSDONE_BINDDNS  0x0010
-#define IOSOCKETFLAG_DNSDONE_DESTDNS  0x0020
-#define IOSOCKETFLAG_DNSERROR         0x0040
-#define IOSOCKETFLAG_IPV6SOCKET       0x0080
-#define IOSOCKETFLAG_PARENT_PUBLIC    0x0100
-#define IOSOCKETFLAG_PARENT_DNSENGINE 0x0200
-#define IOSOCKETFLAG_SSLSOCKET        0x0400 /* use ssl after connecting */
-#define IOSOCKETFLAG_SSL_HANDSHAKE    0x0800 /* SSL Handshake in progress */
-#define IOSOCKETFLAG_SSL_WANTWRITE    0x1000
-#define IOSOCKETFLAG_SSL_READHS       0x2000 /* ssl read rehandshake */
-#define IOSOCKETFLAG_SSL_WRITEHS      0x4000 /* ssl write rehandshake */
-#define IOSOCKETFLAG_SSL_ESTABLISHED  0x8000
-#define IOSOCKETFLAG_SHUTDOWN        0x10000 /* disconnect pending */
-#define IOSOCKETFLAG_CONNECTING      0x20000
-#define IOSOCKETFLAG_INCOMING        0x40000 /* incoming (accepted) connection */
-#define IOSOCKETFLAG_DEAD            0x80000
-#define IOSOCKETFLAG_RECONNECT_IPV4 0x100000 /* possible fallback to ipv4 connect if ipv6 fails */
+#define IOSOCKETFLAG_ACTIVE           0x00000001
+#define IOSOCKETFLAG_LISTENING        0x00000002
+#define IOSOCKETFLAG_IPV6SOCKET       0x00000004
+#define IOSOCKETFLAG_INCOMING         0x00000008 /* incoming (accepted) connection */
+#define IOSOCKETFLAG_CONNECTING       0x00000010
+#define IOSOCKETFLAG_SHUTDOWN         0x00000020 /* disconnect pending */
+#define IOSOCKETFLAG_DEAD             0x00000040 /* socket dead (disconnected) */
+#define IOSOCKETFLAG_RECONNECT_IPV4   0x00000080 /* possible fallback to ipv4 connect if ipv6 fails */
+
+/* DNS Flags */
+#define IOSOCKETFLAG_PENDING_BINDDNS  0x00000100
+#define IOSOCKETFLAG_PENDING_DESTDNS  0x00000200
+#define IOSOCKETFLAG_DNSDONE_BINDDNS  0x00000400
+#define IOSOCKETFLAG_DNSDONE_DESTDNS  0x00000800
+#define IOSOCKETFLAG_DNSERROR         0x00001000
+
+/* SSL Flags */
+#define IOSOCKETFLAG_SSLSOCKET        0x00002000 /* use ssl after connecting */
+#define IOSOCKETFLAG_SSL_HANDSHAKE    0x00004000 /* SSL Handshake in progress */
+#define IOSOCKETFLAG_SSL_WANTWRITE    0x00008000 /* ssl module wants write access */
+#define IOSOCKETFLAG_SSL_READHS       0x00010000 /* ssl read rehandshake */
+#define IOSOCKETFLAG_SSL_WRITEHS      0x00020000 /* ssl write rehandshake */
+#define IOSOCKETFLAG_SSL_ESTABLISHED  0x00040000 /* ssl connection established */
+
+/* WANT_READ / WANT_WRITE override */
+#define IOSOCKETFLAG_OVERRIDE_WANT_RW 0x00080000
+#define IOSOCKETFLAG_OVERRIDE_WANT_R  0x00100000
+#define IOSOCKETFLAG_OVERRIDE_WANT_W  0x00200000
+
+/* Parent descriptors */
+#define IOSOCKETFLAG_PARENT_PUBLIC    0x10000000
+#define IOSOCKETFLAG_PARENT_DNSENGINE 0x20000000
+/* reserved flags for additional descriptor types? */
 
 struct IOSocketDNSLookup {
 	unsigned int bindlookup : 1;
@@ -91,7 +103,7 @@ struct IOSocketDNSLookup {
 struct _IOSocket {
     int fd;
 	
-	unsigned int socket_flags : 24;
+	unsigned int socket_flags : 32;
 	
 	struct {
 		struct IODNSAddress addr;
@@ -119,7 +131,18 @@ void iosocket_loop(int usec);
 void iosocket_lookup_callback(struct IOSocketDNSLookup *lookup, struct IODNSEvent *event);
 void iosocket_events_callback(struct _IOSocket *iosock, int readable, int writeable);
 
-#define iosocket_wants_writes(IOSOCK) ((IOSOCK->writebuf.bufpos && !(IOSOCK->socket_flags & (IOSOCKETFLAG_SSL_READHS | IOSOCKETFLAG_SSL_WRITEHS))) || (IOSOCK->socket_flags & (IOSOCKETFLAG_CONNECTING | IOSOCKETFLAG_SSL_WANTWRITE)))
+#define iosocket_wants_reads(IOSOCK) \
+(\
+	((IOSOCK->socket_flags & (IOSOCKETFLAG_SSL_READHS | IOSOCKETFLAG_SSL_WRITEHS)) && !(IOSOCK->socket_flags & IOSOCKETFLAG_SSL_WANTWRITE)) || \
+	(!(IOSOCK->socket_flags & IOSOCKETFLAG_OVERRIDE_WANT_RW) || \
+	(IOSOCK->socket_flags & (IOSOCKETFLAG_OVERRIDE_WANT_RW | IOSOCKETFLAG_OVERRIDE_WANT_R) == (IOSOCKETFLAG_OVERRIDE_WANT_RW | IOSOCKETFLAG_OVERRIDE_WANT_R)) \
+)
+#define iosocket_wants_writes(IOSOCK) \
+(\
+	(IOSOCK->socket_flags & (IOSOCKETFLAG_SSL_READHS | IOSOCKETFLAG_SSL_WRITEHS | IOSOCKETFLAG_SSL_WANTWRITE) > IOSOCKETFLAG_SSL_WANTWRITE) || \
+	(!(IOSOCK->socket_flags & IOSOCKETFLAG_OVERRIDE_WANT_RW) && (IOSOCK->writebuf.bufpos || (IOSOCK->socket_flags & IOSOCKETFLAG_CONNECTING))) || \
+	(IOSOCK->socket_flags & (IOSOCKETFLAG_OVERRIDE_WANT_RW | IOSOCKETFLAG_OVERRIDE_WANT_W) == (IOSOCKETFLAG_OVERRIDE_WANT_RW | IOSOCKETFLAG_OVERRIDE_WANT_W)) \
+)
 
 #endif
 

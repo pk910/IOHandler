@@ -93,8 +93,9 @@ static void engine_select_loop(struct timeval *timeout) {
 			continue;
 		if(iosock->fd > fds_size)
 			fds_size = iosock->fd;
-		FD_SET(iosock->fd, &read_fds);
 		select_result++;
+		if(iosocket_wants_reads(iosock))
+			FD_SET(iosock->fd, &read_fds);
 		if(iosocket_wants_writes(iosock))
 			FD_SET(iosock->fd, &write_fds);
 	}

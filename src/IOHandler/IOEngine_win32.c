@@ -118,7 +118,7 @@ static long engine_win32_events(struct _IOSocket *iosock) {
 	if(iosock->socket_flags & IOSOCKETFLAG_CONNECTING)
 		return FD_CONNECT;
 	
-	return FD_READ | FD_CLOSE | (iosocket_wants_writes(iosock) ? FD_WRITE : 0);
+	return FD_CLOSE | (iosocket_wants_reads(iosock) ? FD_READ : 0) | (iosocket_wants_writes(iosock) ? FD_WRITE : 0);
 }
 
 static void engine_win32_update(struct _IOSocket *iosock) {

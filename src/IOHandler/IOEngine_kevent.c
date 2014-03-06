@@ -41,7 +41,8 @@ static void engine_kevent_add(struct _IOSocket *iosock) {
 	int nchanges = 0;
 	int res;
 
-	EV_SET(&changes[nchanges++], iosock->fd, EVFILT_READ, EV_ADD, 0, 0, iosock);
+	if (iosocket_wants_reads(iosock))
+		EV_SET(&changes[nchanges++], iosock->fd, EVFILT_READ, EV_ADD, 0, 0, iosock);
 	if (iosocket_wants_writes(iosock))
 		EV_SET(&changes[nchanges++], iosock->fd, EVFILT_WRITE, EV_ADD, 0, 0, iosock);
 	
@@ -64,7 +65,7 @@ static void engine_kevent_update(struct _IOSocket *iosock) {
 	int nchanges = 0;
 	int res;
 
-	EV_SET(&changes[nchanges++], iosock->fd, EVFILT_READ, EV_ADD, 0, 0, iosock);
+	EV_SET(&changes[nchanges++], iosock->fd, EVFILT_READ, iosocket_wants_reads(iosock) ? EV_ADD : EV_DELETE, 0, 0, iosock);
 	EV_SET(&changes[nchanges++], iosock->fd, EVFILT_WRITE, iosocket_wants_writes(iosock) ? EV_ADD : EV_DELETE, 0, 0, iosock);
 	
 	res = kevent(kevent_fd, changes, nchanges, NULL, 0, NULL);
