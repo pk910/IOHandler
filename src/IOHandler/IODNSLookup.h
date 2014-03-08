@@ -64,6 +64,7 @@ extern struct _IODNSQuery *iodnsquery_last;
 #define IODNSFLAG_PARENT_SOCKET  0x08
 
 struct IODNSResult;
+struct _IOSocket;
 
 struct _IODNSQuery {
 	void *query;
@@ -89,6 +90,7 @@ struct IODNSEngine {
     void (*add)(struct _IODNSQuery *query);
     void (*remove)(struct _IODNSQuery *query);
     void (*loop)();
+	void (*socket_callback)(struct _IOSocket *iosock, int readable, int writeable);
 };
 
 void _init_iodns();
@@ -100,8 +102,8 @@ void _stop_dnsquery(struct _IODNSQuery *query);
 /* call only from engines! */
 enum IODNSEventType;
 void _free_dnsquery(struct _IODNSQuery *query);
+void iodns_socket_callback(struct _IOSocket *iosock, int wantread, int wantwrite);
 void iodns_event_callback(struct _IODNSQuery *query, enum IODNSEventType state);
-
 void iodns_poll();
 
 #endif

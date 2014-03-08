@@ -64,6 +64,7 @@ struct IOTimerDescriptor {
 struct IOTimerDescriptor *iotimer_create(struct timeval *timeout);
 void iotimer_start(struct IOTimerDescriptor *iotimer);
 void iotimer_set_autoreload(struct IOTimerDescriptor *iotimer, struct timeval *autoreload);
+void iotimer_set_timeout(struct IOTimerDescriptor *iotimer, struct timeval *timeout);
 void iotimer_set_callback(struct IOTimerDescriptor *iotimer, iotimer_callback *callback);
 void iotimer_destroy(struct IOTimerDescriptor *iotimer);
 

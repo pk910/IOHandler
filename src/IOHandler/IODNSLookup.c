@@ -90,6 +90,11 @@ void _stop_dnsquery(struct _IODNSQuery *query) {
 		_free_dnsquery(query);
 }
 
+void iodns_socket_callback(struct _IOSocket *iosock, int wantread, int wantwrite) {
+	if(dnsengine && dnsengine->socket_callback)
+		dnsengine->socket_callback(iosock, wantread, wantwrite);
+}
+
 void iodns_event_callback(struct _IODNSQuery *query, enum IODNSEventType state) {
 	if((query->flags & IODNSFLAG_PARENT_PUBLIC)) {
 		struct IODNSQuery *descriptor = query->parent;

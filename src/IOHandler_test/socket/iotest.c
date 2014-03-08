@@ -51,7 +51,9 @@ static IOSOCKET_CALLBACK(io_callback) {
         case IOSOCKETEVENT_RECV:
 			{
 				struct IOSocketBuffer *recv_buf = event->data.recv_buf;
-				write(1, recv_buf->buffer, recv_buf->bufpos);
+				int i;
+				for(i = 0; i < recv_buf->bufpos; i++)
+					putchar(recv_buf->buffer[i]);
 				recv_buf->bufpos = 0;
 				printf("\n");
             }

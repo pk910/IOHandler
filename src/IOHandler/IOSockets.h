@@ -127,6 +127,12 @@ struct _IOSocket {
 };
 
 void _init_sockets();
+struct _IOSocket *_create_socket();
+void _free_socket(struct _IOSocket *iosock);
+void iosocket_activate(struct _IOSocket *iosock);
+void iosocket_deactivate(struct _IOSocket *iosock);
+void iosocket_update(struct _IOSocket *iosock);
+
 void iosocket_loop(int usec);
 void iosocket_lookup_callback(struct IOSocketDNSLookup *lookup, struct IODNSEvent *event);
 void iosocket_events_callback(struct _IOSocket *iosock, int readable, int writeable);
@@ -134,14 +140,14 @@ void iosocket_events_callback(struct _IOSocket *iosock, int readable, int writea
 #define iosocket_wants_reads(IOSOCK) \
 (\
 	((IOSOCK->socket_flags & (IOSOCKETFLAG_SSL_READHS | IOSOCKETFLAG_SSL_WRITEHS)) && !(IOSOCK->socket_flags & IOSOCKETFLAG_SSL_WANTWRITE)) || \
-	(!(IOSOCK->socket_flags & IOSOCKETFLAG_OVERRIDE_WANT_RW) || \
-	(IOSOCK->socket_flags & (IOSOCKETFLAG_OVERRIDE_WANT_RW | IOSOCKETFLAG_OVERRIDE_WANT_R) == (IOSOCKETFLAG_OVERRIDE_WANT_RW | IOSOCKETFLAG_OVERRIDE_WANT_R)) \
+	(!(IOSOCK->socket_flags & IOSOCKETFLAG_OVERRIDE_WANT_RW)) || \
+	((IOSOCK->socket_flags & (IOSOCKETFLAG_OVERRIDE_WANT_RW | IOSOCKETFLAG_OVERRIDE_WANT_R)) == (IOSOCKETFLAG_OVERRIDE_WANT_RW | IOSOCKETFLAG_OVERRIDE_WANT_R)) \
 )
 #define iosocket_wants_writes(IOSOCK) \
 (\
-	(IOSOCK->socket_flags & (IOSOCKETFLAG_SSL_READHS | IOSOCKETFLAG_SSL_WRITEHS | IOSOCKETFLAG_SSL_WANTWRITE) > IOSOCKETFLAG_SSL_WANTWRITE) || \
+	((IOSOCK->socket_flags & (IOSOCKETFLAG_SSL_READHS | IOSOCKETFLAG_SSL_WRITEHS | IOSOCKETFLAG_SSL_WANTWRITE)) > IOSOCKETFLAG_SSL_WANTWRITE) || \
 	(!(IOSOCK->socket_flags & IOSOCKETFLAG_OVERRIDE_WANT_RW) && (IOSOCK->writebuf.bufpos || (IOSOCK->socket_flags & IOSOCKETFLAG_CONNECTING))) || \
-	(IOSOCK->socket_flags & (IOSOCKETFLAG_OVERRIDE_WANT_RW | IOSOCKETFLAG_OVERRIDE_WANT_W) == (IOSOCKETFLAG_OVERRIDE_WANT_RW | IOSOCKETFLAG_OVERRIDE_WANT_W)) \
+	((IOSOCK->socket_flags & (IOSOCKETFLAG_OVERRIDE_WANT_RW | IOSOCKETFLAG_OVERRIDE_WANT_W)) == (IOSOCKETFLAG_OVERRIDE_WANT_RW | IOSOCKETFLAG_OVERRIDE_WANT_W)) \
 )
 
 #endif
