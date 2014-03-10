@@ -23,13 +23,14 @@
 
 #include <errno.h>
 #include <time.h>
+#include <string.h>
+#include <stdio.h>
 #ifdef WIN32
 #define _WIN32_WINNT 0x501
 #include <windows.h>
 #include <winsock2.h>
-#else
-#include <string.h>
-#include <stdio.h>
+#elif defined HAVE_SYS_SELECT_H
+#include <sys/select.h>
 #endif
 
 /* compat */

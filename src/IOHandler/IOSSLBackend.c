@@ -250,7 +250,7 @@ void iossl_init() {};
 void iossl_connect(struct _IOSocket *iosock) {};
 void iossl_listen(struct _IOSocket *iosock, const char *certfile, const char *keyfile) {};
 void iossl_client_handshake(struct _IOSocket *iosock) {};
-void iossl_client_accepted(struct _IOSocket *iosock, struct IODescriptor *client_iofd) {};
+void iossl_client_accepted(struct _IOSocket *iosock, struct _IOSocket *client_iofd) {};
 void iossl_server_handshake(struct _IOSocket *iosock) {};
 void iossl_disconnect(struct _IOSocket *iosock) {};
 int iossl_read(struct _IOSocket *iosock, char *buffer, int len) { return 0; };

@@ -212,4 +212,5 @@ struct IODNSEngine dnsengine_default = {
     .add = dnsengine_default_add,
     .remove = dnsengine_default_remove,
     .loop = dnsengine_default_loop,
+	.socket_callback = NULL,
 };

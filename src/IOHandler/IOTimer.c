@@ -80,6 +80,20 @@ void iotimer_set_autoreload(struct IOTimerDescriptor *descriptor, struct timeval
 	}
 }
 
+void iotimer_set_timeout(struct IOTimerDescriptor *descriptor, struct timeval *timeout) {
+	struct _IOTimerDescriptor *timer = descriptor->iotimer;
+	if(timer == NULL) {
+		iolog_trigger(IOLOG_WARNING, "called iotimer_set_timeout for destroyed IOTimerDescriptor in %s:%d", __FILE__, __LINE__);
+		return;
+	}
+	if(!timeout) {
+		iolog_trigger(IOLOG_WARNING, "called iotimer_set_timeout without timeout given in %s:%d", __FILE__, __LINE__);
+		return;
+	}
+	timer->timeout = *timeout;
+	_rearrange_timer(timer);
+}
+
 void iotimer_set_callback(struct IOTimerDescriptor *descriptor, iotimer_callback *callback) {
 	descriptor->callback = callback;
 }

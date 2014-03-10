@@ -20,6 +20,7 @@
 #include "IOSockets.h"
 #include "IOLog.h"
 #include "IODNSLookup.h"
+#include "IOSSLBackend.h"
 
 #ifdef WIN32
 #define _WIN32_WINNT 0x501
@@ -51,8 +52,6 @@ struct _IOSocket *iosocket_last = NULL;
 
 struct IOEngine *engine = NULL;
 
-static void iosocket_activate(struct _IOSocket *iosock);
-static void iosocket_deactivate(struct _IOSocket *iosock);
 static void iosocket_increase_buffer(struct IOSocketBuffer *iobuf, size_t required);
 static int iosocket_parse_address(const char *hostname, struct IODNSAddress *addr, int records);
 static int iosocket_lookup_hostname(struct _IOSocket *iosock, const char *hostname, int records, int bindaddr);
@@ -147,18 +146,24 @@ void _free_socket(struct _IOSocket *iosock) {
 	free(iosock);
 }
 
-static void iosocket_activate(struct _IOSocket *iosock) {
+void iosocket_activate(struct _IOSocket *iosock) {
 	if((iosock->socket_flags & IOSOCKETFLAG_ACTIVE))
 		return;
 	iosock->socket_flags |= IOSOCKETFLAG_ACTIVE;
 	engine->add(iosock);
 }
 
-static void iosocket_deactivate(struct _IOSocket *iosock) {
+void iosocket_deactivate(struct _IOSocket *iosock) {
 	if(!(iosock->socket_flags & IOSOCKETFLAG_ACTIVE))
 		return;
 	iosock->socket_flags &= ~IOSOCKETFLAG_ACTIVE;
 	engine->remove(iosock);
+}
+
+void iosocket_update(struct _IOSocket *iosock) {
+	if(!(iosock->socket_flags & IOSOCKETFLAG_ACTIVE))
+		return;
+	engine->update(iosock);
 }
 
 static void iosocket_increase_buffer(struct IOSocketBuffer *iobuf, size_t required) {
@@ -1056,7 +1061,7 @@ void iosocket_events_callback(struct _IOSocket *iosock, int readable, int writea
 			iosocket_close(iosocket);
 		
 	} else if((iosock->socket_flags & IOSOCKETFLAG_PARENT_DNSENGINE)) {
-		//TODO: IODNS callback
+		iodns_socket_callback(iosock, readable, writeable);
 	}
 }
 
