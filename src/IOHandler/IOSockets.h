@@ -134,7 +134,7 @@ void iosocket_events_callback(struct _IOSocket *iosock, int readable, int writea
 #define iosocket_wants_reads(IOSOCK) \
 (\
 	((IOSOCK->socket_flags & (IOSOCKETFLAG_SSL_READHS | IOSOCKETFLAG_SSL_WRITEHS)) && !(IOSOCK->socket_flags & IOSOCKETFLAG_SSL_WANTWRITE)) || \
-	(!(IOSOCK->socket_flags & IOSOCKETFLAG_OVERRIDE_WANT_RW) || \
+	(!(IOSOCK->socket_flags & IOSOCKETFLAG_OVERRIDE_WANT_RW)) || \
 	(IOSOCK->socket_flags & (IOSOCKETFLAG_OVERRIDE_WANT_RW | IOSOCKETFLAG_OVERRIDE_WANT_R) == (IOSOCKETFLAG_OVERRIDE_WANT_RW | IOSOCKETFLAG_OVERRIDE_WANT_R)) \
 )
 #define iosocket_wants_writes(IOSOCK) \
@@ -169,6 +169,11 @@ enum IOSocketEventType {
 	IOSOCKETEVENT_DNSFAILED /* failed to lookup DNS information (recv_str contains error message) */
 };
 
+#define IOSOCKET_ADDR_IPV4 0x01
+#define IOSOCKET_ADDR_IPV6 0x02 /* overrides IOSOCKET_ADDR_IPV4 */
+#define IOSOCKET_PROTO_UDP 0x04
+
+#if !defined IOSOCKET_CPP
 struct IOSocket {
 	void *iosocket;
 	
@@ -194,11 +199,6 @@ struct IOSocketEvent {
     } data;
 };
 
-
-#define IOSOCKET_ADDR_IPV4 0x01
-#define IOSOCKET_ADDR_IPV6 0x02 /* overrides IOSOCKET_ADDR_IPV4 */
-#define IOSOCKET_PROTO_UDP 0x04
-
 struct IOSocket *iosocket_connect(const char *hostname, unsigned int port, int ssl, const char *bindhost, iosocket_callback *callback);
 struct IOSocket *iosocket_connect_flags(const char *hostname, unsigned int port, int ssl, const char *bindhost, iosocket_callback *callback, int flags);
 struct IOSocket *iosocket_listen(const char *hostname, unsigned int port, iosocket_callback *callback);
@@ -210,4 +210,5 @@ void iosocket_send(struct IOSocket *iosocket, const char *data, size_t datalen);
 void iosocket_printf(struct IOSocket *iosocket, const char *text, ...);
 void iosocket_close(struct IOSocket *iosocket);
 
+#endif
 #endif

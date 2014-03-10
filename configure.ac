@@ -5,7 +5,7 @@ AC_INIT([IOMultiplexer], [2.0], [iohandler@pk910.de], [pk910], [http://pk910.de]
 AC_PREFIX_DEFAULT([~/iotest])
 AC_CONFIG_MACRO_DIR([m4])
 AM_INIT_AUTOMAKE([foreign])
-#AM_SILENT_RULES([yes])
+AM_SILENT_RULES([yes])
 AC_CONFIG_HEADERS([config.h])
 
 #LT_INIT([disable-static])
@@ -16,6 +16,7 @@ AC_SUBST(MODULES)
 # Checks for programs.
 AC_PROG_AWK
 AC_PROG_CC
+AC_PROG_CXX
 AC_PROG_INSTALL
 AC_PROG_MAKE_SET
 AC_PROG_RANLIB
@@ -48,5 +49,5 @@ AC_CHECK_LIB(pthread, pthread_create, [
   ])
 ])
 
-AC_CONFIG_FILES([Makefile src/Makefile src/IOHandler/Makefile src/IOHandler_test/Makefile src/IOHandler_test/socket/Makefile src/IOHandler_test/timer/Makefile])
+AC_CONFIG_FILES([Makefile src/Makefile src/IOHandler/Makefile src/IOHandler++/Makefile src/IOHandler_test/Makefile src/IOHandler_test/socket/Makefile src/IOHandler_test/socket++/Makefile src/IOHandler_test/timer/Makefile])
 AC_OUTPUT
