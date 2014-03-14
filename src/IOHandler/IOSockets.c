@@ -809,7 +809,7 @@ static int iosocket_try_write(struct _IOSocket *iosock) {
 			res = 0;
 	} else {
 		iosock->writebuf.bufpos -= res;
-		if((iosock->socket_flags & (IOSOCKETFLAG_ACTIVE & IOSOCKETFLAG_SHUTDOWN)) == IOSOCKETFLAG_ACTIVE)
+		if((iosock->socket_flags & (IOSOCKETFLAG_ACTIVE | IOSOCKETFLAG_SHUTDOWN)) == IOSOCKETFLAG_ACTIVE)
 			engine->update(iosock);
 	}
 	return res;
@@ -858,6 +858,28 @@ void iosocket_printf(struct IOSocket *iosocket, const char *text, ...) {
 	iosocket_send(iosocket, sendBuf, pos);
 }
 
+
+int iosocket_wants_reads(struct _IOSocket *iosock) {
+	if((iosock->socket_flags & (IOSOCKETFLAG_SSL_READHS | IOSOCKETFLAG_SSL_WRITEHS)))
+		return ((iosock->socket_flags & IOSOCKETFLAG_SSL_WANTWRITE) ? 0 : 1);
+	if(!(iosock->socket_flags & IOSOCKETFLAG_OVERRIDE_WANT_RW))
+		return 1;
+	else if((iosock->socket_flags & IOSOCKETFLAG_OVERRIDE_WANT_R))
+		return 1;
+	return 0;
+}
+int iosocket_wants_writes(struct _IOSocket *iosock) {
+	if((iosock->socket_flags & (IOSOCKETFLAG_SSL_READHS | IOSOCKETFLAG_SSL_WRITEHS)))
+		return ((iosock->socket_flags & IOSOCKETFLAG_SSL_WANTWRITE) ? 1 : 0);
+	if(!(iosock->socket_flags & IOSOCKETFLAG_OVERRIDE_WANT_RW)) {
+		if(iosock->writebuf.bufpos || (iosock->socket_flags & IOSOCKETFLAG_CONNECTING))
+			return 1;
+		else
+			return 0;
+	} else if((iosock->socket_flags & IOSOCKETFLAG_OVERRIDE_WANT_W))
+		return 1;
+	return 0;
+}
 
 
 static void iosocket_trigger_event(struct IOSocketEvent *event) {
@@ -965,15 +987,22 @@ void iosocket_events_callback(struct _IOSocket *iosock, int readable, int writea
 				else if((iosock->socket_flags & IOSOCKETFLAG_SSL_WRITEHS))
 					ssl_rehandshake = 2;
 			}
+			iosocketevents_callback_retry_read:
 			if((readable && ssl_rehandshake == 0) || ssl_rehandshake == 1) {
 				int bytes;
-				if(iosock->readbuf.buflen - iosock->readbuf.bufpos >= 128)
-					iosocket_increase_buffer(&iosock->readbuf, iosock->readbuf.buflen + 1024);
+				if(iosock->readbuf.buflen - iosock->readbuf.bufpos >= 128) {
+					int addsize;
+					if(iosock->readbuf.buflen >= 2048)
+						addsize = 1024;
+					else
+						addsize = iosock->readbuf.buflen;
+					iosocket_increase_buffer(&iosock->readbuf, iosock->readbuf.buflen + addsize);
+				}
 				if((iosock->socket_flags & IOSOCKETFLAG_SSLSOCKET))
 					bytes = iossl_read(iosock, iosock->readbuf.buffer + iosock->readbuf.bufpos, iosock->readbuf.buflen - iosock->readbuf.bufpos);
 				else 
 					bytes = recv(iosock->fd, iosock->readbuf.buffer + iosock->readbuf.bufpos, iosock->readbuf.buflen - iosock->readbuf.bufpos, 0);
-					
+				
 				if(bytes <= 0) {
 					if((iosock->socket_flags & (IOSOCKETFLAG_SSLSOCKET | IOSOCKETFLAG_SSL_READHS)) == (IOSOCKETFLAG_SSLSOCKET | IOSOCKETFLAG_SSL_READHS)) {
 						ssl_rehandshake = 1;
@@ -987,6 +1016,7 @@ void iosocket_events_callback(struct _IOSocket *iosock, int readable, int writea
 					int i;
 					iolog_trigger(IOLOG_DEBUG, "received %d bytes (fd: %d). readbuf position: %d", bytes, iosock->fd, iosock->readbuf.bufpos);
 					iosock->readbuf.bufpos += bytes;
+					int retry_read = (iosock->readbuf.bufpos == iosock->readbuf.buflen);
 					callback_event.type = IOSOCKETEVENT_RECV;
 					
 					if(iosocket->parse_delimiter) {
@@ -1035,6 +1065,8 @@ void iosocket_events_callback(struct _IOSocket *iosock, int readable, int writea
 						callback_event.type = IOSOCKETEVENT_IGNORE;
 					} else
 						callback_event.data.recv_buf = &iosock->readbuf;
+					if(retry_read)
+						goto iosocketevents_callback_retry_read;
 				}
 			}
 			if((writeable && ssl_rehandshake == 0) || ssl_rehandshake == 2) {
