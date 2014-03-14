@@ -21,6 +21,13 @@
 
 #include <stdarg.h>
 #include <stdio.h>
+#include <stdlib.h>
+
+struct iolog_callback_entry {
+	iolog_callback *callback;
+	struct iolog_callback_entry *next;
+};
+static struct iolog_callback_entry *iolog_callbacks = NULL;
 
 void iolog_init() {
 
@@ -40,9 +47,18 @@ void iolog_trigger(enum IOLogType type, char *text, ...) {
     logBuf[pos] = '\n';
     logBuf[pos+1] = '\0';
     
-    printf("%s", logBuf);
+    struct iolog_callback_entry *callback;
+	for(callback = iolog_callbacks; callback; callback = callback->next)
+		callback->callback(type, logBuf);
 }
 
 void iolog_register_callback(iolog_callback *callback) {
-
+	struct iolog_callback_entry *logcb = malloc(sizeof(*logcb));
+	if(!logcb) {
+		iolog_trigger(IOLOG_ERROR, "Failed to allocate memory for iolog_callback_entry in %s:%d", __FILE__, __LINE__);
+		return;
+	}
+	logcb->callback = callback;
+	logcb->next = iolog_callbacks;
+	iolog_callbacks = logcb;
 }
