@@ -32,12 +32,22 @@
 #include <winsock2.h>
 #elif defined HAVE_SYS_SELECT_H
 #include <sys/select.h>
+#include <netdb.h>
+#include <arpa/inet.h>
 #endif
+
+#include "compat/inet.h"
 
 struct dnsengine_cares_socket {
 	struct _IOSocket *iosock;
 	int want_read : 1;
 	int want_write : 1;
+};
+
+struct dnsengine_cares_query {
+	int query_count;
+	int query_successful;
+	struct _IODNSQuery *iodns;
 };
 
 static IOTIMER_CALLBACK(dnsengine_cares_timer_callback);
@@ -57,7 +67,7 @@ static int dnsengine_cares_init() {
 		iolog_trigger(IOLOG_ERROR, "Failed to initialize c-ares in %s:%d", __FILE__, __LINE__);
         return 0;
     }
-    return 0; /* backend not completed */
+    return 1;
 }
 
 static void dnsengine_cares_update_sockets() {
@@ -120,6 +130,7 @@ static void dnsengine_cares_update_sockets() {
 			//set up iosock
 			iosock->socket_flags |= IOSOCKETFLAG_PARENT_DNSENGINE | IOSOCKETFLAG_OVERRIDE_WANT_RW;
 			iosock->fd = ares_socks[i];
+			dnsengine_cares_sockets[sockid].iosock = iosock;
 			dnsengine_cares_sockets[sockid].want_read = 0;
 			dnsengine_cares_sockets[sockid].want_write = 0;
 			
@@ -200,13 +211,128 @@ static void dnsengine_cares_stop() {
 }
 
 
+static void dnsengine_cares_callback(void *arg, int status, int timeouts, struct hostent *host) {
+	struct dnsengine_cares_query *query = arg;
+	struct _IODNSQuery *iodns = query->iodns;
+	query->query_count--;
+	if(iodns) {
+		if(!(iodns->flags & IODNSFLAG_RUNNING)) {
+			// query stopped
+			query->iodns = NULL;
+			iodns = NULL;
+			iodns_free_result(iodns->result);
+			_free_dnsquery(iodns);
+		}
+		if(iodns && status == ARES_SUCCESS) {
+			if((iodns->type & IODNS_FORWARD)) {
+				char **h_addr;
+				for(h_addr = host->h_addr_list; *h_addr; h_addr++) {
+					struct IODNSResult *dnsresult = malloc(sizeof(*dnsresult));
+					if(!dnsresult) {
+						iolog_trigger(IOLOG_ERROR, "Failed to allocate memory for IODNSResult in %s:%d", __FILE__, __LINE__);
+						goto dnsengine_cares_callback_finally;
+					}
+					
+					int sockaddrlen;
+					if(host->h_addrtype == AF_INET) {
+						dnsresult->type = IODNS_RECORD_A;
+						sockaddrlen = sizeof(struct sockaddr_in);
+					} else {
+						dnsresult->type = IODNS_RECORD_AAAA;
+						sockaddrlen = sizeof(struct sockaddr_in6);
+					}
+					dnsresult->result.addr.addresslen = sockaddrlen;
+					dnsresult->result.addr.address = malloc(sockaddrlen);
+					if(!dnsresult->result.addr.address) {
+						iolog_trigger(IOLOG_ERROR, "Failed to allocate memory for sockaddr in %s:%d", __FILE__, __LINE__);
+						goto dnsengine_cares_callback_finally;
+					}
+					void *target = (host->h_addrtype == AF_INET ? ((void *) &((struct sockaddr_in *)dnsresult->result.addr.address)->sin_addr) : ((void *) &((struct sockaddr_in6 *)dnsresult->result.addr.address)->sin6_addr));
+					memcpy(target, *h_addr, host->h_length);
+					
+					if(host->h_addrtype == AF_INET) {
+						char str[INET_ADDRSTRLEN];
+						inet_ntop( AF_INET, &((struct sockaddr_in *)dnsresult->result.addr.address)->sin_addr, str, INET_ADDRSTRLEN );
+						iolog_trigger(IOLOG_DEBUG, "Resolved %s to (A): %s", iodns->request.host, str);
+					} else {
+						char str[INET6_ADDRSTRLEN];
+						inet_ntop( AF_INET6, &((struct sockaddr_in6 *)dnsresult->result.addr.address)->sin6_addr, str, INET6_ADDRSTRLEN );
+						iolog_trigger(IOLOG_DEBUG, "Resolved %s to (AAAA): %s", iodns->request.host, str);
+					}
+					
+					dnsresult->next = iodns->result;
+					iodns->result = dnsresult;
+				}
+				
+			} else if((iodns->type & IODNS_REVERSE)) {
+				struct IODNSResult *dnsresult = malloc(sizeof(*dnsresult));
+				if(!dnsresult) {
+					iolog_trigger(IOLOG_ERROR, "Failed to allocate memory for IODNSResult in %s:%d", __FILE__, __LINE__);
+					goto dnsengine_cares_callback_finally;
+				}
+				
+				dnsresult->type = IODNS_RECORD_PTR;
+				dnsresult->result.host = strdup(host->h_name);
+				if(!dnsresult->result.host) {
+					iolog_trigger(IOLOG_ERROR, "Failed to duplicate h_name string for IODNSResult in %s:%d", __FILE__, __LINE__);
+					goto dnsengine_cares_callback_finally;
+				}
+				
+				dnsresult->next = iodns->result;
+				iodns->result = dnsresult;
+			}
+			
+			query->query_successful++;
+		}
+	}
+	dnsengine_cares_callback_finally:
+	if(query->query_count <= 0) {
+		if(iodns) {
+			iodns->flags &= ~(IODNSFLAG_PROCESSING | IODNSFLAG_RUNNING);
+			iodns_event_callback(iodns, (query->query_successful ? IODNSEVENT_SUCCESS : IODNSEVENT_FAILED));
+		}
+		free(query);
+	}
+}
 
 static void dnsengine_cares_add(struct _IODNSQuery *iodns) {
-    /* TODO */
+	struct dnsengine_cares_query *query = malloc(sizeof(*query));
+	if(!query) {
+		iolog_trigger(IOLOG_ERROR, "Failed to allocate memory for dnsengine_cares_query in %s:%d", __FILE__, __LINE__);
+		iodns_event_callback(iodns, IODNSEVENT_FAILED);
+		return;
+	}
+	iodns->query = query;
+	query->query_count = 0;
+	query->query_successful = 0;
+	query->iodns = iodns;
+	iodns->flags |= IODNSFLAG_PROCESSING;
+	if((iodns->type & IODNS_FORWARD)) {
+		if((iodns->type & IODNS_RECORD_A)) {
+			query->query_count++;
+			ares_gethostbyname(dnsengine_cares_channel, iodns->request.host, AF_INET, dnsengine_cares_callback, query);
+		}
+		if((iodns->type & IODNS_RECORD_AAAA)) {
+			query->query_count++;
+			ares_gethostbyname(dnsengine_cares_channel, iodns->request.host, AF_INET6, dnsengine_cares_callback, query);
+		}
+	} else if((iodns->type & IODNS_REVERSE)) {
+		query->query_count++;
+		struct sockaddr *addr = iodns->request.addr.address;
+		if(addr->sa_family == AF_INET) {
+			struct sockaddr_in *addr4 = (struct sockaddr_in *) iodns->request.addr.address;
+			ares_gethostbyaddr(dnsengine_cares_channel, &addr4->sin_addr, sizeof(addr4->sin_addr), addr->sa_family, dnsengine_cares_callback, query);
+		} else {
+			struct sockaddr_in6 *addr6 = (struct sockaddr_in6 *)iodns->request.addr.address;
+			ares_gethostbyaddr(dnsengine_cares_channel, &addr6->sin6_addr, sizeof(addr6->sin6_addr), addr->sa_family, dnsengine_cares_callback, query);
+		}
+	}
+	dnsengine_cares_update_timeout();
+	dnsengine_cares_update_sockets();
 }
 
 static void dnsengine_cares_remove(struct _IODNSQuery *iodns) {
-    /* TODO */
+	/* empty */
 }
 
 static void dnsengine_cares_loop() {

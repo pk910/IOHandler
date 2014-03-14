@@ -37,8 +37,11 @@
 
 
 #ifdef IODNS_USE_THREADS
-static pthread_t iodns_thread;
-static int iodns_thread_running = 1;
+#define IODNS_MAX_THREAD 10
+#define IODNS_INC_THREAD_BY_LOAD 5 /* add another thread when there are more than IODNS_INC_THREAD_BY_LOAD querys per thread */
+static pthread_t *iodns_thread[IODNS_MAX_THREAD];
+static int iodns_threads_wanted = 1;
+static int iodns_threads_running = 0;
 
 static pthread_cond_t iodns_cond;
 static pthread_mutex_t iodns_sync, iodns_sync2;
@@ -50,8 +53,13 @@ static void iodns_process_queries();
 #ifdef IODNS_USE_THREADS
 static void *dnsengine_worker_main(void *arg) {
 	struct _IODNSQuery *query;
-	while(iodns_thread_running) {
+	while(1) {
 		IOSYNCHRONIZE(iodns_sync);
+		if(iodns_threads_wanted < iodns_threads_running) {
+			iodns_threads_running--;
+			break;
+		}
+		
 		for(query = iodnsquery_first; query; query = query->next) {
 			if((query->flags & IODNSFLAG_RUNNING))
 				break;
@@ -60,10 +68,37 @@ static void *dnsengine_worker_main(void *arg) {
 		if(!query)
 			pthread_cond_wait(&iodns_cond, &iodns_sync2);
 		
-		if(iodns_thread_running)
-			iodns_process_queries();
+		if(iodns_threads_wanted < iodns_threads_running) {
+			iodns_threads_running--;
+			break;
+		}
+		
+		iodns_process_queries();
 	}
 	return NULL;
+}
+
+static int dnsengine_default_start_worker() {
+	if(iodns_threads_wanted >= IODNS_MAX_THREAD-1)
+		return 0;
+	int i;
+	for(i = 0; i < IODNS_MAX_THREAD; i++) {
+		if(!iodns_thread[i]) 
+			break;
+	}
+	if(i >= IODNS_MAX_THREAD)
+		return 0;
+	iodns_thread[i] = malloc(sizeof(**iodns_thread));
+	if(!iodns_thread[i])
+		return 0;
+	iodns_threads_wanted++;
+	if(pthread_create(iodns_thread[i], NULL, dnsengine_worker_main, NULL)) {
+		iodns_threads_wanted--;
+		iolog_trigger(IOLOG_ERROR, "could not create pthread in %s:%d (Returned: %i)", __FILE__, __LINE__, thread_err);
+		return 0;
+	}
+	iodns_threads_running++;
+	return 1;
 }
 #endif
 
@@ -74,14 +109,9 @@ static int dnsengine_default_init() {
 	IOTHREAD_MUTEX_INIT(iodns_sync);
 	IOTHREAD_MUTEX_INIT(iodns_sync2);
 	
-	iodns_thread_running = 1;
-	
-	int thread_err;
-	thread_err = pthread_create(&iodns_thread, NULL, dnsengine_worker_main, NULL);
-	if(thread_err) {
-		iolog_trigger(IOLOG_ERROR, "could not create pthread in %s:%d (Returned: %i)", __FILE__, __LINE__, thread_err);
+	if(!dnsengine_default_start_worker()) {
 		iodns_loop_blocking = 1;
-		iodns_thread_running = 0;
+		iodns_threads_running = 0;
 	}
 	#else
 	iodns_loop_blocking = 1;
@@ -91,12 +121,19 @@ static int dnsengine_default_init() {
 
 static void dnsengine_default_stop() {
 	#ifdef IODNS_USE_THREADS
+	int i;
 	if(iodns_thread_running) {
-		iodns_thread_running = 0;
+		iodns_threads_wanted = 0;
 		IOSYNCHRONIZE(iodns_sync2);
-		pthread_cond_signal(&iodns_cond);
+		pthread_cond_broadcast(&iodns_cond);
 		IODESYNCHRONIZE(iodns_sync2);
-		pthread_join(iodns_thread, NULL);
+		for(i = 0; i < IODNS_MAX_THREAD; i++) {
+			if(iodns_thread[i]) {
+				pthread_join(*iodns_thread[i], NULL);
+				free(iodns_thread[i]);
+				iodns_thread[i] = NULL;
+			}
+		}
 	}
 	#endif
 }
@@ -107,6 +144,18 @@ static void dnsengine_default_add(struct _IODNSQuery *iodns) {
 		IOSYNCHRONIZE(iodns_sync2);
 		pthread_cond_signal(&iodns_cond);
 		IODESYNCHRONIZE(iodns_sync2);
+		
+		int querycount = 0;
+		for(iodns = iodnsquery_first; iodns; iodns = iodns->next) {
+			if(!(iodns->flags & IODNSFLAG_RUNNING))
+				continue;
+			if((iodns->flags & IODNSFLAG_PROCESSING))
+				continue;
+			querycount++;
+		}
+		if(querycount / iodns_threads_wanted > IODNS_INC_THREAD_BY_LOAD) {
+			dnsengine_default_start_worker();
+		}
 	}
 	#endif
 }
@@ -134,6 +183,7 @@ static void iodns_process_queries() {
 			continue;
 		if((iodns->flags & IODNSFLAG_PROCESSING))
 			continue;
+		iodns->flags |= IODNSFLAG_PROCESSING;
 		
 		IODESYNCHRONIZE(iodns_sync);
 		

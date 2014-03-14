@@ -17,7 +17,6 @@
 
 /* required configure script checks
  AC_FUNC_MALLOC
- AC_FUNC_CALLOC
  AC_CHECK_FUNCS([usleep select socket inet_pton inet_ntop])
  AC_CHECK_HEADERS([fcntl.h sys/socket.h sys/select.h sys/time.h sys/types.h unistd.h windows.h winsock2.h errno.h sys/epoll.h sys/event.h])
  
@@ -32,6 +31,11 @@
  AC_CHECK_LIB(pthread, pthread_create, [
    AC_CHECK_HEADERS(pthread.h, [
      LIBS="$LIBS -lpthread"
+   ])
+ ])
+ AC_CHECK_LIB(cares, ares_init, [
+   AC_CHECK_HEADERS(ares.h, [
+     LIBS="$LIBS -lcares"
    ])
  ])
 */
