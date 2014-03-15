@@ -8,7 +8,7 @@ AM_INIT_AUTOMAKE([foreign])
 AM_SILENT_RULES([yes])
 AC_CONFIG_HEADERS([config.h])
 
-#LT_INIT([disable-static])
+LT_INIT([disable-static])
 
 AC_MSG_RESULT($MODULES)
 AC_SUBST(MODULES)
@@ -19,7 +19,7 @@ AC_PROG_CC
 AC_PROG_CXX
 AC_PROG_INSTALL
 AC_PROG_MAKE_SET
-AC_PROG_RANLIB
+AC_PROG_LIBTOOL
 
 AC_ARG_ENABLE([debug],
   [AS_HELP_STRING([--enable-debug], [debug mode (compile using -O0 -Wall -Wshadow -Werror)])],

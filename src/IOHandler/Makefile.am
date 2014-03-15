@@ -1,7 +1,7 @@
 ##Process this file with automake to create Makefile.in
 ACLOCAL_AMFLAGS = -I m4
 
-libiohandler_a_SOURCES = compat/utime.c \
+libiohandler_la_SOURCES = compat/utime.c \
     compat/inet.c \
     IOHandler.c \
     IODNSEngine_cares.c \
@@ -17,4 +17,4 @@ libiohandler_a_SOURCES = compat/utime.c \
     IOSSLBackend.c \
     IOTimer.c
 
-noinst_LIBRARIES = libiohandler.a
+noinst_LTLIBRARIES = libiohandler.la

@@ -3,6 +3,5 @@ ACLOCAL_AMFLAGS = -I m4
 
 noinst_PROGRAMS = iotest
 
-iotest_LDADD = ../../IOHandler++/libiohandler.cpp.a \
-../../IOHandler/libiohandler.a
+iotest_LDADD = ../../IOHandler++/libiohandler.cpp.la
 iotest_SOURCES = iotest.cpp
