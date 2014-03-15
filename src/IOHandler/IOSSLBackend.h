@@ -19,13 +19,27 @@
 
 struct _IOSocket;
 
-#ifdef HAVE_OPENSSL_SSL_H
+#if defined(HAVE_GNUTLS_GNUTLS_H)
+#include <gnutls/gnutls.h>
+struct IOSSLDescriptor {
+	union {
+		struct {
+			gnutls_session_t session;
+			gnutls_certificate_client_credentials credentials;
+		} client;
+		struct {
+			gnutls_priority_t priority;
+			gnutls_certificate_credentials_t credentials;
+		} server;
+	} ssl;
+};
+
+#elif defined(HAVE_OPENSSL_SSL_H)
 #include <openssl/rand.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 
 struct IOSSLDescriptor {
-	unsigned int flags : 8;
     SSL *sslHandle;
     SSL_CTX *sslContext;
 };

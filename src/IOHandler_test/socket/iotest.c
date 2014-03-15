@@ -65,5 +65,5 @@ static IOSOCKET_CALLBACK(io_callback) {
 }
 
 static IOLOG_CALLBACK(io_log) {
-    //printf("%s", line);
+	printf("%s", message);
 }

@@ -21,7 +21,233 @@
 #include "IOSockets.h"
 #include "IOSSLBackend.h"
 
-#ifdef HAVE_OPENSSL_SSL_H
+#if defined(HAVE_GNUTLS_GNUTLS_H)
+#include <string.h>
+#include <stdlib.h>
+#include <errno.h>
+/* GnuTLS Backend */
+static gnutls_dh_params_t dh_params;
+
+static int generate_dh_params() {
+	unsigned int bits = gnutls_sec_param_to_pk_bits(GNUTLS_PK_DH, GNUTLS_SEC_PARAM_LEGACY);
+	gnutls_dh_params_init(&dh_params);
+	gnutls_dh_params_generate2(dh_params, bits);
+	return 0;
+}
+
+void iossl_init() {
+    int ret;
+	if((ret = gnutls_global_init()) != GNUTLS_E_SUCCESS) {
+		iolog_trigger(IOLOG_ERROR, "SSL: gnutls_global_init(): failed (%d)", ret);
+		//TODO: Error handling?
+		return;
+	}
+	generate_dh_params();
+}
+
+// Client
+void iossl_connect(struct _IOSocket *iosock) {
+    struct IOSSLDescriptor *sslnode = malloc(sizeof(*sslnode));
+	int err;
+	
+	err = gnutls_certificate_allocate_credentials(&sslnode->ssl.client.credentials);
+	if(err < 0) {
+		goto ssl_connect_err;
+	}
+	
+	gnutls_init(&sslnode->ssl.client.session, GNUTLS_CLIENT);
+	
+	gnutls_priority_set_direct(sslnode->ssl.client.session, "NONE:+VERS-TLS1.0:+VERS-SSL3.0:+CIPHER-ALL:+COMP-ALL:+RSA:+DHE-RSA:+DHE-DSS:+MAC-ALL", NULL);
+	gnutls_credentials_set(sslnode->ssl.client.session, GNUTLS_CRD_CERTIFICATE, sslnode->ssl.client.credentials);
+    
+	gnutls_transport_set_int(sslnode->ssl.client.session, iosock->fd);
+	gnutls_handshake_set_timeout(sslnode->ssl.client.session, GNUTLS_DEFAULT_HANDSHAKE_TIMEOUT);
+	
+    iosock->sslnode = sslnode;
+	iosock->socket_flags |= IOSOCKETFLAG_SSL_HANDSHAKE;
+    iossl_client_handshake(iosock);
+    return;
+ssl_connect_err:
+    free(sslnode);
+    iosocket_events_callback(iosock, 0, 0);
+}
+
+void iossl_client_handshake(struct _IOSocket *iosock) {
+    // Perform an SSL handshake.
+    int ret = gnutls_handshake(iosock->sslnode->ssl.client.session);
+    iosock->socket_flags &= ~IOSOCKETFLAG_SSL_WANTWRITE;
+	
+	if(ret < 0) {
+		if(gnutls_error_is_fatal(ret) == 0) {
+			if(gnutls_record_get_direction(iosock->sslnode->ssl.client.session)) {
+				iosock->socket_flags |= IOSOCKETFLAG_SSL_WANTWRITE;
+				iolog_trigger(IOLOG_DEBUG, "gnutls_handshake for fd %d wants to write...", iosock->fd);
+			} else {
+				iolog_trigger(IOLOG_DEBUG, "gnutls_handshake for fd %d wants to read...", iosock->fd);
+			}
+		} else {
+			iolog_trigger(IOLOG_ERROR, "gnutls_handshake for fd %d failed with %s", iosock->fd, gnutls_strerror(ret));
+			iosocket_events_callback(iosock, 0, 0);
+		}
+	} else {
+		char *desc;
+		desc = gnutls_session_get_desc(iosock->sslnode->ssl.client.session);
+		iolog_trigger(IOLOG_DEBUG, "SSL handshake for fd %d successful: %s", iosock->fd, desc);
+		gnutls_free(desc);
+		iosock->socket_flags |= IOSOCKETFLAG_SSL_ESTABLISHED;
+		iosocket_events_callback(iosock, 0, 0); //perform IOEVENT_CONNECTED event
+	}
+}
+
+
+// Server
+void iossl_listen(struct _IOSocket *iosock, const char *certfile, const char *keyfile) {
+    struct IOSSLDescriptor *sslnode = malloc(sizeof(*sslnode));
+	
+	gnutls_priority_init(&sslnode->ssl.server.priority, "NONE:+VERS-TLS1.0:+VERS-SSL3.0:+CIPHER-ALL:+COMP-ALL:+RSA:+DHE-RSA:+DHE-DSS:+MAC-ALL", NULL);
+	
+	gnutls_certificate_allocate_credentials(&sslnode->ssl.server.credentials);
+	int ret = gnutls_certificate_set_x509_key_file(sslnode->ssl.server.credentials, certfile, keyfile, GNUTLS_X509_FMT_PEM);
+    if (ret < 0) {
+		iolog_trigger(IOLOG_ERROR, "SSL: could not load server certificate/key (%s %s)", certfile, keyfile);
+		goto ssl_listen_err;
+	}
+	
+	gnutls_certificate_set_dh_params(sslnode->ssl.server.credentials, dh_params);
+	
+    iosock->sslnode = sslnode;
+    iosock->socket_flags |= IOSOCKETFLAG_SSL_ESTABLISHED;
+    return;
+ssl_listen_err:
+    free(sslnode);
+    iosock->sslnode = NULL;
+    iosocket_events_callback(iosock, 0, 0);
+}
+
+void iossl_client_accepted(struct _IOSocket *iosock, struct _IOSocket *new_iosock) {
+    struct IOSSLDescriptor *sslnode = malloc(sizeof(*sslnode));
+    
+	gnutls_init(&sslnode->ssl.client.session, GNUTLS_SERVER);
+	gnutls_priority_set(sslnode->ssl.client.session, iosock->sslnode->ssl.server.priority);
+	gnutls_credentials_set(sslnode->ssl.client.session, GNUTLS_CRD_CERTIFICATE, iosock->sslnode->ssl.server.credentials);
+	
+	/* We don't request any certificate from the client.
+	 * If we did we would need to verify it.
+	 */
+	gnutls_certificate_server_set_request(sslnode->ssl.client.session, GNUTLS_CERT_IGNORE);
+	
+	gnutls_transport_set_int(sslnode->ssl.client.session, new_iosock->fd);
+	
+    new_iosock->sslnode = sslnode;
+    new_iosock->socket_flags |= IOSOCKETFLAG_SSL_HANDSHAKE;
+    return;
+	/*
+ssl_accept_err:
+    free(sslnode);
+    iosock->sslnode = NULL;
+    iosocket_events_callback(new_iosock, 0, 0);
+	*/
+}
+
+void iossl_server_handshake(struct _IOSocket *iosock) {
+    return iossl_client_handshake(iosock);
+}
+
+void iossl_disconnect(struct _IOSocket *iosock) {
+    if(!iosock->sslnode) return;
+	
+	if((iosock->socket_flags & IOSOCKETFLAG_LISTENING)) {
+		gnutls_certificate_free_credentials(iosock->sslnode->ssl.server.credentials);
+		gnutls_priority_deinit(iosock->sslnode->ssl.server.priority);
+	} else {
+		gnutls_bye(iosock->sslnode->ssl.client.session, GNUTLS_SHUT_RDWR);
+		gnutls_certificate_free_credentials(iosock->sslnode->ssl.client.credentials);
+		gnutls_deinit(iosock->sslnode->ssl.client.session);
+	}
+	
+    free(iosock->sslnode);
+    iosock->sslnode = NULL;
+    iosock->socket_flags &= ~IOSOCKETFLAG_SSLSOCKET;
+}
+
+static void iossl_rehandshake(struct _IOSocket *iosock, int hsflag) {
+	int ret = gnutls_handshake(iosock->sslnode->ssl.client.session);
+    iosock->socket_flags &= ~IOSOCKETFLAG_SSL_WANTWRITE;
+	
+	if(ret < 0) {
+		if(gnutls_error_is_fatal(ret) == 0) {
+			if(gnutls_record_get_direction(iosock->sslnode->ssl.client.session)) {
+				iosock->socket_flags |= IOSOCKETFLAG_SSL_WANTWRITE | hsflag;
+				iolog_trigger(IOLOG_DEBUG, "gnutls_handshake for fd %d wants to write...", iosock->fd);
+			} else {
+				iosock->socket_flags |= hsflag;
+				iolog_trigger(IOLOG_DEBUG, "gnutls_handshake for fd %d wants to read...", iosock->fd);
+			}
+		} else {
+			iolog_trigger(IOLOG_ERROR, "gnutls_handshake for fd %d failed: %s", iosock->fd, gnutls_strerror(ret));
+			//TODO: Error Action?
+		}
+	} else {
+		char *desc;
+		desc = gnutls_session_get_desc(iosock->sslnode->ssl.client.session);
+		iolog_trigger(IOLOG_DEBUG, "SSL handshake for fd %d successful: %s", iosock->fd, desc);
+		gnutls_free(desc);
+		iosock->socket_flags &= ~hsflag;
+	}
+}
+
+int iossl_read(struct _IOSocket *iosock, char *buffer, int len) {
+    if((iosock->socket_flags & (IOSOCKETFLAG_SSLSOCKET | IOSOCKETFLAG_SSL_ESTABLISHED)) != (IOSOCKETFLAG_SSLSOCKET | IOSOCKETFLAG_SSL_ESTABLISHED))
+		return 0;
+	if((iosock->socket_flags & IOSOCKETFLAG_SSL_READHS)) {
+		iossl_rehandshake(iosock, IOSOCKETFLAG_SSL_READHS);
+		errno = EAGAIN;
+		return -1;
+	}
+    int ret = gnutls_record_recv(iosock->sslnode->ssl.client.session, buffer, len);
+	if(ret == 0) {
+		//TLS session closed
+		//TODO: Action?
+	} else if(ret < 0 && gnutls_error_is_fatal(ret) == 0) {
+		iolog_trigger(IOLOG_WARNING, "gnutls_record_recv for fd %d returned %s", iosock->fd, gnutls_strerror(ret));
+		if(ret == GNUTLS_E_REHANDSHAKE) {
+			iossl_rehandshake(iosock, IOSOCKETFLAG_SSL_READHS);
+			errno = EAGAIN;
+			return -1;
+		}
+	} else if(ret < 0) {
+		iolog_trigger(IOLOG_ERROR, "gnutls_record_recv for fd %d failed: %s", iosock->fd, gnutls_strerror(ret));
+		errno = ret;
+		return ret;
+	}
+    return ret;
+}
+
+int iossl_write(struct _IOSocket *iosock, char *buffer, int len) {
+    if((iosock->socket_flags & (IOSOCKETFLAG_SSLSOCKET | IOSOCKETFLAG_SSL_ESTABLISHED)) != (IOSOCKETFLAG_SSLSOCKET | IOSOCKETFLAG_SSL_ESTABLISHED))
+		return 0;
+	if((iosock->socket_flags & IOSOCKETFLAG_SSL_WRITEHS)) {
+		iossl_rehandshake(iosock, IOSOCKETFLAG_SSL_WRITEHS);
+		errno = EAGAIN;
+		return -1;
+	}
+    int ret = gnutls_record_send(iosock->sslnode->ssl.client.session, buffer, len);
+    if(ret < 0 && gnutls_error_is_fatal(ret) == 0) {
+		iolog_trigger(IOLOG_WARNING, "gnutls_record_send for fd %d returned %s", iosock->fd, gnutls_strerror(ret));
+		if(ret == GNUTLS_E_REHANDSHAKE) {
+			iossl_rehandshake(iosock, IOSOCKETFLAG_SSL_WRITEHS);
+			errno = EAGAIN;
+			return -1;
+		}
+	} else if(ret < 0) {
+		iolog_trigger(IOLOG_ERROR, "gnutls_record_send for fd %d failed: %s", iosock->fd, gnutls_strerror(ret));
+		errno = ret;
+		return ret;
+	}
+    return ret;
+}
+
+#elif defined(HAVE_OPENSSL_SSL_H)
 /* OpenSSL Backend */
 
 
@@ -131,7 +357,7 @@ ssl_listen_err:
 
 void iossl_client_accepted(struct _IOSocket *iosock, struct _IOSocket *new_iosock) {
     struct IOSSLDescriptor *sslnode = malloc(sizeof(*sslnode));
-    sslnode->sslHandle = SSL_new(sslnode->sslContext);
+    sslnode->sslHandle = SSL_new(iosock->sslnode->sslContext);
     if(!sslnode->sslHandle) {
         iossl_error();
         iolog_trigger(IOLOG_ERROR, "SSL: could not create client SSL Handle");
