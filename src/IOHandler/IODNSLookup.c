@@ -130,7 +130,7 @@ void iodns_poll() {
 
 /* public functions */
 
-struct IODNSQuery *iodns_getaddrinfo(char *hostname, int records, iodns_callback *callback) {
+struct IODNSQuery *iodns_getaddrinfo(char *hostname, int records, iodns_callback *callback, void *arg) {
 	if(!(records & IODNS_FORWARD) || !hostname || !callback)
 		return NULL;
 	
@@ -149,6 +149,7 @@ struct IODNSQuery *iodns_getaddrinfo(char *hostname, int records, iodns_callback
 	query->parent = descriptor;
 	query->flags |= IODNSFLAG_PARENT_PUBLIC;
 	descriptor->query = query;
+	descriptor->data = arg;
 	
 	query->request.host = strdup(hostname);
 	query->type = (records & IODNS_FORWARD);
@@ -159,7 +160,7 @@ struct IODNSQuery *iodns_getaddrinfo(char *hostname, int records, iodns_callback
 	return descriptor;
 }
 
-struct IODNSQuery *iodns_getnameinfo(const struct sockaddr *addr, size_t addrlen, iodns_callback *callback) {
+struct IODNSQuery *iodns_getnameinfo(const struct sockaddr *addr, size_t addrlen, iodns_callback *callback, void *arg) {
 	if(!addr || !callback)
 		return NULL;
 	
@@ -178,6 +179,7 @@ struct IODNSQuery *iodns_getnameinfo(const struct sockaddr *addr, size_t addrlen
 	query->parent = descriptor;
 	query->flags |= IODNSFLAG_PARENT_PUBLIC;
 	descriptor->query = query;
+	descriptor->data = arg;
 	
 	query->type = IODNS_RECORD_PTR;
 	query->request.addr.addresslen = addrlen;

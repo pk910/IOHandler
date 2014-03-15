@@ -174,6 +174,7 @@ static void iodns_process_queries() {
     struct addrinfo hints, *res, *allres;
     struct _IODNSQuery *iodns, *next_iodns;
     struct IODNSResult *dnsresult;
+	int ret;
 	iodns_process_queries_start:
 	IOSYNCHRONIZE(iodns_sync);
     for(iodns = iodnsquery_first; iodns; iodns = next_iodns) {
@@ -194,7 +195,6 @@ static void iodns_process_queries() {
             hints.ai_family = PF_UNSPEC;
             hints.ai_socktype = SOCK_STREAM;
             hints.ai_flags |= AI_CANONNAME;
-			int ret;
             if (!(ret = getaddrinfo(iodns->request.host, NULL, &hints, &allres))) {
 				res = allres;
                 while (res) {
@@ -204,7 +204,8 @@ static void iodns_process_queries() {
                             dnsresult = malloc(sizeof(*dnsresult));
                             dnsresult->type = IODNS_RECORD_A;
                             dnsresult->result.addr.addresslen = res->ai_addrlen;
-                            dnsresult->result.addr.address = malloc(dnsresult->result.addr.addresslen);
+                            dnsresult->result.addr.address = calloc(dnsresult->result.addr.addresslen, 1);
+							dnsresult->result.addr.address->sa_family = AF_INET;
                             memcpy(dnsresult->result.addr.address, res->ai_addr, dnsresult->result.addr.addresslen);
                             dnsresult->next = iodns->result;
                             iodns->result = dnsresult;
@@ -222,6 +223,7 @@ static void iodns_process_queries() {
                             dnsresult->type = IODNS_RECORD_AAAA;
                             dnsresult->result.addr.addresslen = res->ai_addrlen;
                             dnsresult->result.addr.address = calloc(dnsresult->result.addr.addresslen, 1);
+							dnsresult->result.addr.address->sa_family = AF_INET6;
                             memcpy(dnsresult->result.addr.address, res->ai_addr, dnsresult->result.addr.addresslen);
                             dnsresult->next = iodns->result;
                             iodns->result = dnsresult;
@@ -240,7 +242,31 @@ static void iodns_process_queries() {
             } else {
 				iolog_trigger(IOLOG_WARNING, "getaddrinfo returned error code: %d", ret);
 			}
-        }
+        } else if((iodns->type & IODNS_REVERSE)) {
+			char hostname[NI_MAXHOST];
+			if(!(ret = getnameinfo(iodns->request.addr.address, iodns->request.addr.addresslen, hostname, sizeof(hostname), NULL, 0, 0))) {
+				dnsresult = malloc(sizeof(*dnsresult));
+				dnsresult->type = IODNS_RECORD_PTR;
+				dnsresult->result.host = strdup(hostname);
+				dnsresult->next = iodns->result;
+				iodns->result = dnsresult;
+				
+				if(iodns->request.addr.address->sa_family == AF_INET) {
+					char str[INET_ADDRSTRLEN];
+					inet_ntop(AF_INET, &((struct sockaddr_in *)iodns->request.addr.address)->sin_addr, str, INET_ADDRSTRLEN);
+					iolog_trigger(IOLOG_DEBUG, "Resolved %s to (PTR): %s", str, hostname);
+				} else {
+					char str[INET6_ADDRSTRLEN];
+					inet_ntop(AF_INET6, &((struct sockaddr_in6 *)iodns->request.addr.address)->sin6_addr, str, INET6_ADDRSTRLEN);
+					iolog_trigger(IOLOG_DEBUG, "Resolved %s to (PTR): %s", str, hostname);
+				}
+				
+				querystate = IODNSEVENT_SUCCESS;
+			} else {
+				iolog_trigger(IOLOG_WARNING, "getnameinfo returned error code: %d", ret);
+			}
+			
+		}
 		IOSYNCHRONIZE(iodns_sync);
 		if(!(iodns->flags & IODNSFLAG_RUNNING)) {
 			iodns_free_result(iodns->result);

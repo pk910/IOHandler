@@ -148,8 +148,8 @@ struct IODNSEvent {
 	struct IODNSResult *result;
 };
 
-struct IODNSQuery *iodns_getaddrinfo(char *hostname, int records, iodns_callback *callback);
-struct IODNSQuery *iodns_getnameinfo(const struct sockaddr *addr, size_t addrlen, iodns_callback *callback);
+struct IODNSQuery *iodns_getaddrinfo(char *hostname, int records, iodns_callback *callback, void *arg);
+struct IODNSQuery *iodns_getnameinfo(const struct sockaddr *addr, size_t addrlen, iodns_callback *callback, void *arg);
 void iodns_abort(struct IODNSQuery *query);
 
 void iodns_free_result(struct IODNSResult *result);

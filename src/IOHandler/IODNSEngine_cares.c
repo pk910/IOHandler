@@ -250,6 +250,7 @@ static void dnsengine_cares_callback(void *arg, int status, int timeouts, struct
 					void *target = (host->h_addrtype == AF_INET ? ((void *) &((struct sockaddr_in *)dnsresult->result.addr.address)->sin_addr) : ((void *) &((struct sockaddr_in6 *)dnsresult->result.addr.address)->sin6_addr));
 					memcpy(target, *h_addr, host->h_length);
 					
+					dnsresult->result.addr.address->sa_family = host->h_addrtype;
 					if(host->h_addrtype == AF_INET) {
 						char str[INET_ADDRSTRLEN];
 						inet_ntop( AF_INET, &((struct sockaddr_in *)dnsresult->result.addr.address)->sin_addr, str, INET_ADDRSTRLEN );
