@@ -63,5 +63,17 @@ AC_CHECK_LIB(cares, ares_init, [
   ])
 ])
 
-AC_CONFIG_FILES([Makefile src/Makefile src/IOHandler/Makefile src/IOHandler++/Makefile src/IOHandler_test/Makefile src/IOHandler_test/socket/Makefile src/IOHandler_test/socket++/Makefile src/IOHandler_test/timer/Makefile src/IOHandler_test/resolv/Makefile])
+AC_CONFIG_FILES([
+  Makefile
+  src/Makefile
+  src/IOHandler/Makefile
+  src/IOHandler++/Makefile
+  src/IOHandler_test/Makefile
+  src/IOHandler_test/client/Makefile
+  src/IOHandler_test/client++/Makefile
+  src/IOHandler_test/client_ssl/Makefile
+  src/IOHandler_test/server_ssl/Makefile
+  src/IOHandler_test/timer/Makefile
+  src/IOHandler_test/resolv/Makefile
+])
 AC_OUTPUT

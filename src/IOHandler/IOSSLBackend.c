@@ -109,7 +109,7 @@ void iossl_listen(struct _IOSocket *iosock, const char *certfile, const char *ke
 	gnutls_certificate_allocate_credentials(&sslnode->ssl.server.credentials);
 	int ret = gnutls_certificate_set_x509_key_file(sslnode->ssl.server.credentials, certfile, keyfile, GNUTLS_X509_FMT_PEM);
     if (ret < 0) {
-		iolog_trigger(IOLOG_ERROR, "SSL: could not load server certificate/key (%s %s)", certfile, keyfile);
+		iolog_trigger(IOLOG_ERROR, "SSL: could not load server certificate/key (%s %s): %d - %s", certfile, keyfile, ret, gnutls_strerror(ret));
 		goto ssl_listen_err;
 	}
 	
