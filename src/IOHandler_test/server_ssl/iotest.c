@@ -22,7 +22,7 @@
 #include "../../IOHandler/IOLog.h"
 
 #define CERTFILE "cert.pem"
-#define KEYFILE "key.pen"
+#define KEYFILE "key.pem"
 
 static IOSOCKET_CALLBACK(io_callback);
 static IOLOG_CALLBACK(io_log);

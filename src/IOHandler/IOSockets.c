@@ -551,7 +551,7 @@ static void iosocket_listen_finish(struct _IOSocket *iosock) {
 	if((iosock->socket_flags & IOSOCKETFLAG_IPV6SOCKET)) {
 		struct sockaddr_in6 *ip6bind = (void*) iosock->bind.addr.address;
 		ip6bind->sin6_family = AF_INET6;
-		ip6bind->sin6_port = htons(0);
+		ip6bind->sin6_port = htons(iosock->port);
 		
 		int opt = 1;
 		setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, (const char*)&opt, sizeof(opt));
@@ -560,7 +560,7 @@ static void iosocket_listen_finish(struct _IOSocket *iosock) {
 	} else {
 		struct sockaddr_in *ip4bind = (void*) iosock->bind.addr.address;
 		ip4bind->sin_family = AF_INET;
-		ip4bind->sin_port = htons(0);
+		ip4bind->sin_port = htons(iosock->port);
 		
 		int opt = 1;
 		setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, (const char*)&opt, sizeof(opt));
@@ -591,6 +591,7 @@ struct _IOSocket *iosocket_accept_client(struct _IOSocket *iosock) {
 	}
 	new_iosocket->iosocket = new_iosock;
 	new_iosocket->status = IOSOCKET_CONNECTED;
+	new_iosocket->data = iosock;
 	new_iosock->parent = new_iosocket;
 	new_iosock->socket_flags |= IOSOCKETFLAG_PARENT_PUBLIC | IOSOCKETFLAG_INCOMING | (iosock->socket_flags & IOSOCKETFLAG_IPV6SOCKET);
 	
@@ -753,7 +754,7 @@ struct IOSocket *iosocket_listen_ssl(const char *hostname, unsigned int port, co
 struct IOSocket *iosocket_listen_ssl_flags(const char *hostname, unsigned int port, const char *certfile, const char *keyfile, iosocket_callback *callback, int flags) {
 	struct IOSocket *iosocket = iosocket_listen_flags(hostname, port, callback, flags);
 	struct _IOSocket *iosock = iosocket->iosocket;
-	iosock->socket_flags |= IOSOCKETFLAG_SSLSOCKET | IOSOCKETFLAG_SSL_HANDSHAKE;
+	iosock->socket_flags |= IOSOCKETFLAG_SSLSOCKET;
 	iossl_listen(iosock, certfile, keyfile);
 	return iosocket;
 }
@@ -911,6 +912,11 @@ void iosocket_events_callback(struct _IOSocket *iosock, int readable, int writea
 					iosock->socket_flags &= ~IOSOCKETFLAG_SSL_HANDSHAKE;
 					callback_event.type = IOSOCKETEVENT_ACCEPT;
 					callback_event.data.accept_socket = iosock->parent;
+					struct _IOSocket *parent_socket = iosocket->data;
+					callback_event.socket = parent_socket->parent;
+					
+					//initialize readbuf
+					iosocket_increase_buffer(&iosock->readbuf, 1024);
 				} else {
 					//incoming SSL connection failed, simply drop
 					iosock->socket_flags |= IOSOCKETFLAG_DEAD;
