@@ -45,10 +45,10 @@ extern struct _IODNSQuery *iodnsquery_last;
 #define PTHREAD_MUTEX_RECURSIVE_VAL PTHREAD_MUTEX_RECURSIVE
 #endif
 #define IOTHREAD_MUTEX_INIT(var) { \
-    pthread_mutexattr_t mutex_attr; \
-    pthread_mutexattr_init(&mutex_attr);\
-    pthread_mutexattr_settype(&mutex_attr, PTHREAD_MUTEX_RECURSIVE_VAL);\
-    pthread_mutex_init(&var, &mutex_attr); \
+	pthread_mutexattr_t mutex_attr; \
+	pthread_mutexattr_init(&mutex_attr);\
+	pthread_mutexattr_settype(&mutex_attr, PTHREAD_MUTEX_RECURSIVE_VAL);\
+	pthread_mutex_init(&var, &mutex_attr); \
 }
 #define IOSYNCHRONIZE(var) pthread_mutex_lock(&var)
 #define IODESYNCHRONIZE(var) pthread_mutex_unlock(&var)
@@ -71,7 +71,7 @@ struct _IODNSQuery {
 	
 	unsigned int flags : 8;
 	unsigned int type : 8;
-    union {
+	union {
 		struct IODNSAddress addr;
 		char *host;
 	} request;
@@ -84,12 +84,12 @@ struct _IODNSQuery {
 };
 
 struct IODNSEngine {
-    const char *name;
-    int (*init)();
+	const char *name;
+	int (*init)();
 	void (*stop)();
-    void (*add)(struct _IODNSQuery *query);
-    void (*remove)(struct _IODNSQuery *query);
-    void (*loop)();
+	void (*add)(struct _IODNSQuery *query);
+	void (*remove)(struct _IODNSQuery *query);
+	void (*loop)();
 	void (*socket_callback)(struct _IOSocket *iosock, int readable, int writeable);
 };
 
@@ -115,8 +115,8 @@ struct sockaddr;
 typedef IODNS_CALLBACK(iodns_callback);
 
 enum IODNSEventType {
-    IODNSEVENT_SUCCESS,
-    IODNSEVENT_FAILED
+	IODNSEVENT_SUCCESS,
+	IODNSEVENT_FAILED
 };
 
 #define IODNS_RECORD_A    0x01
@@ -129,22 +129,22 @@ enum IODNSEventType {
 struct IODNSQuery {
 	void *query;
 	
-    iodns_callback *callback;
-    void *data;
+	iodns_callback *callback;
+	void *data;
 };
 
 struct IODNSResult {
-    unsigned int type : 8;
-    union {
+	unsigned int type : 8;
+	union {
 		struct IODNSAddress addr;
 		char *host;
 	} result;
-    struct IODNSResult *next;
+	struct IODNSResult *next;
 };
 
 struct IODNSEvent {
-    enum IODNSEventType type;
-    struct IODNSQuery *query;
+	enum IODNSEventType type;
+	struct IODNSQuery *query;
 	struct IODNSResult *result;
 };
 

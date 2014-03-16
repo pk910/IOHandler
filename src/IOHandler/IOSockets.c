@@ -91,12 +91,12 @@ static void iosockets_init_engine() {
 void _init_sockets() {
 	#ifdef WIN32
 	WSADATA wsaData;
-    int iResult;
+	int iResult;
 	//Initialize Winsock
-    iResult = WSAStartup(MAKEWORD(2,2), &wsaData);
-    if(iResult != 0){
-        iolog_trigger(IOLOG_ERROR, "WSAStartup returned error code: %d", iResult);
-    }
+	iResult = WSAStartup(MAKEWORD(2,2), &wsaData);
+	if(iResult != 0){
+		iolog_trigger(IOLOG_ERROR, "WSAStartup returned error code: %d", iResult);
+	}
 	#endif
 	
 	iosockets_init_engine();

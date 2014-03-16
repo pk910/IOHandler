@@ -65,9 +65,9 @@ static int dnsengine_cares_init() {
 	// initialize cares
 	if((res = ares_init(&dnsengine_cares_channel)) != ARES_SUCCESS) {
 		iolog_trigger(IOLOG_ERROR, "Failed to initialize c-ares in %s:%d", __FILE__, __LINE__);
-        return 0;
-    }
-    return 1;
+		return 0;
+	}
+	return 1;
 }
 
 static void dnsengine_cares_update_sockets() {
@@ -337,28 +337,28 @@ static void dnsengine_cares_remove(struct _IODNSQuery *iodns) {
 }
 
 static void dnsengine_cares_loop() {
-    /* empty */
+	/* empty */
 }
 
 struct IODNSEngine dnsengine_cares = {
-    .name = "c-ares",
-    .init = dnsengine_cares_init,
+	.name = "c-ares",
+	.init = dnsengine_cares_init,
 	.stop = dnsengine_cares_stop,
-    .add = dnsengine_cares_add,
-    .remove = dnsengine_cares_remove,
-    .loop = dnsengine_cares_loop,
+	.add = dnsengine_cares_add,
+	.remove = dnsengine_cares_remove,
+	.loop = dnsengine_cares_loop,
 	.socket_callback = dnsengine_cares_socket_callback,
 };
 
 #else
 
 struct IODNSEngine dnsengine_cares = {
-    .name = "c-ares",
-    .init = NULL,
+	.name = "c-ares",
+	.init = NULL,
 	.stop = NULL,
-    .add = NULL,
-    .remove = NULL,
-    .loop = NULL,
+	.add = NULL,
+	.remove = NULL,
+	.loop = NULL,
 	.socket_callback = NULL,
 };
 

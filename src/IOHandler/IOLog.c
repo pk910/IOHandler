@@ -36,18 +36,18 @@ void iolog_init() {
 #define MAXLOG 1024
 
 void iolog_trigger(enum IOLogType type, char *text, ...) {
-    va_list arg_list;
-    char logBuf[MAXLOG+1];
-    int pos;
-    logBuf[0] = '\0';
-    va_start(arg_list, text);
-    pos = vsnprintf(logBuf, MAXLOG - 1, text, arg_list);
-    va_end(arg_list);
-    if (pos < 0 || pos > (MAXLOG - 1)) pos = MAXLOG - 1;
-    logBuf[pos] = '\n';
-    logBuf[pos+1] = '\0';
-    
-    struct iolog_callback_entry *callback;
+	va_list arg_list;
+	char logBuf[MAXLOG+1];
+	int pos;
+	logBuf[0] = '\0';
+	va_start(arg_list, text);
+	pos = vsnprintf(logBuf, MAXLOG - 1, text, arg_list);
+	va_end(arg_list);
+	if (pos < 0 || pos > (MAXLOG - 1)) pos = MAXLOG - 1;
+	logBuf[pos] = '\n';
+	logBuf[pos+1] = '\0';
+	
+	struct iolog_callback_entry *callback;
 	for(callback = iolog_callbacks; callback; callback = callback->next)
 		callback->callback(type, logBuf);
 }

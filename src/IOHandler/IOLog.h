@@ -27,10 +27,10 @@ void iolog_trigger(enum IOLogType type, char *text, ...);
 #endif
 
 enum IOLogType {
-    IOLOG_DEBUG,
-    IOLOG_WARNING,
-    IOLOG_ERROR,
-    IOLOG_FATAL
+	IOLOG_DEBUG,
+	IOLOG_WARNING,
+	IOLOG_ERROR,
+	IOLOG_FATAL
 };
 
 #define IOLOG_CALLBACK(NAME) void NAME(enum IOLogType type, char *message)

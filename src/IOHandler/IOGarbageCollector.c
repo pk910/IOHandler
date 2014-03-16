@@ -61,14 +61,14 @@ void iogc_add_callback(void *object, iogc_free *free_callback) {
 		return;
 	}
 	struct IOGCObject *obj = malloc(sizeof(*obj));
-    if(!obj) {
-        iolog_trigger(IOLOG_ERROR, "could not allocate memory for IOGCObject in %s:%d", __FILE__, __LINE__);
+	if(!obj) {
+		iolog_trigger(IOLOG_ERROR, "could not allocate memory for IOGCObject in %s:%d", __FILE__, __LINE__);
 		if(free_callback)
 			free_callback(object);
 		else
 			free(object);
-        return;
-    }
+		return;
+	}
 	obj->object = object;
 	obj->free_callback = free_callback;
 	gettimeofday(&obj->timeout, NULL);

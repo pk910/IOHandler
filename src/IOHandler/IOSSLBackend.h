@@ -40,12 +40,12 @@ struct IOSSLDescriptor {
 #include <openssl/err.h>
 
 struct IOSSLDescriptor {
-    SSL *sslHandle;
-    SSL_CTX *sslContext;
+	SSL *sslHandle;
+	SSL_CTX *sslContext;
 };
 #else
 struct IOSSLDescriptor {
-    //just unused
+	//just unused
 };
 #endif
 

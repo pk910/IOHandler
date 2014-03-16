@@ -21,8 +21,8 @@
 #include "IODNSAddress.struct.h"
 
 struct IOSocketBuffer {
-    char *buffer;
-    size_t bufpos, buflen;
+	char *buffer;
+	size_t bufpos, buflen;
 };
 
 #ifndef _IOHandler_internals
@@ -37,13 +37,13 @@ struct _IODNSQuery;
 struct IODNSEvent;
 
 struct IOEngine {
-    const char *name;
-    int (*init)(void);
-    void (*add)(struct _IOSocket *iosock);
-    void (*remove)(struct _IOSocket *iosock);
-    void (*update)(struct _IOSocket *iosock);
-    void (*loop)(struct timeval *timeout);
-    void (*cleanup)(void);
+	const char *name;
+	int (*init)(void);
+	void (*add)(struct _IOSocket *iosock);
+	void (*remove)(struct _IOSocket *iosock);
+	void (*update)(struct _IOSocket *iosock);
+	void (*loop)(struct timeval *timeout);
+	void (*cleanup)(void);
 };
 
 /* IO Engines */
@@ -101,7 +101,7 @@ struct IOSocketDNSLookup {
 };
 
 struct _IOSocket {
-    int fd;
+	int fd;
 	
 	unsigned int socket_flags : 32;
 	
@@ -117,7 +117,7 @@ struct _IOSocket {
 	unsigned int port : 16;
 	
 	struct IOSocketBuffer readbuf;
-    struct IOSocketBuffer writebuf;
+	struct IOSocketBuffer writebuf;
 	
 	struct IOSSLDescriptor *sslnode;
 	
@@ -148,20 +148,20 @@ struct IOSocketEvent;
 typedef IOSOCKET_CALLBACK(iosocket_callback);
 
 enum IOSocketStatus { 
-    IOSOCKET_CLOSED, /* descriptor is dead (socket waiting for removal or timer) */
-    IOSOCKET_LISTENING, /* descriptor is waiting for connections (server socket) */
-    IOSOCKET_CONNECTING, /* descriptor is waiting for connection approval (connecting client socket) */
-    IOSOCKET_CONNECTED, /* descriptor is connected (connected client socket) */
+	IOSOCKET_CLOSED, /* descriptor is dead (socket waiting for removal or timer) */
+	IOSOCKET_LISTENING, /* descriptor is waiting for connections (server socket) */
+	IOSOCKET_CONNECTING, /* descriptor is waiting for connection approval (connecting client socket) */
+	IOSOCKET_CONNECTED, /* descriptor is connected (connected client socket) */
 	IOSOCKET_SSLHANDSHAKE /* descriptor is waiting for ssl (handshake) */
 };
 
 enum IOSocketEventType {
-    IOSOCKETEVENT_IGNORE,
-    IOSOCKETEVENT_RECV, /* client socket received something (read_lines == 1  =>  recv_str valid;  read_lines == 0  =>  recv_buf valid) */
-    IOSOCKETEVENT_CONNECTED, /* client socket connected successful */
-    IOSOCKETEVENT_NOTCONNECTED, /* client socket could not connect (errid valid) */
-    IOSOCKETEVENT_CLOSED, /* client socket lost connection (errid valid) */
-    IOSOCKETEVENT_ACCEPT, /* server socket accepted new connection (accept_socket valid) */
+	IOSOCKETEVENT_IGNORE,
+	IOSOCKETEVENT_RECV, /* client socket received something (read_lines == 1  =>  recv_str valid;  read_lines == 0  =>  recv_buf valid) */
+	IOSOCKETEVENT_CONNECTED, /* client socket connected successful */
+	IOSOCKETEVENT_NOTCONNECTED, /* client socket could not connect (errid valid) */
+	IOSOCKETEVENT_CLOSED, /* client socket lost connection (errid valid) */
+	IOSOCKETEVENT_ACCEPT, /* server socket accepted new connection (accept_socket valid) */
 	IOSOCKETEVENT_DNSFAILED /* failed to lookup DNS information (recv_str contains error message) */
 };
 
@@ -185,14 +185,14 @@ struct IOSocket {
 };
 
 struct IOSocketEvent {
-    enum IOSocketEventType type;
-    struct IOSocket *socket;
-    union {
-        char *recv_str;
+	enum IOSocketEventType type;
+	struct IOSocket *socket;
+	union {
+		char *recv_str;
 		struct IOSocketBuffer *recv_buf;
-        int errid;
-        struct IOSocket *accept_socket;
-    } data;
+		int errid;
+		struct IOSocket *accept_socket;
+	} data;
 };
 
 struct IOSocket *iosocket_connect(const char *hostname, unsigned int port, int ssl, const char *bindhost, iosocket_callback *callback);

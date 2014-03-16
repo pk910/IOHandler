@@ -33,13 +33,13 @@ struct _IOTimerDescriptor;
 extern struct _IOTimerDescriptor *iotimer_sorted_descriptors;
 
 struct _IOTimerDescriptor {
-    unsigned int flags : 8;
-    void *parent; 
-    
-    struct timeval timeout;
-    struct timeval autoreload;
-    
-    struct _IOTimerDescriptor *prev, *next;
+	unsigned int flags : 8;
+	void *parent; 
+	
+	struct timeval timeout;
+	struct timeval autoreload;
+	
+	struct _IOTimerDescriptor *prev, *next;
 };
 
 void _init_timers();
@@ -55,10 +55,10 @@ struct IOTimerDescriptor;
 typedef IOTIMER_CALLBACK(iotimer_callback);
 
 struct IOTimerDescriptor {
-    void *iotimer; /* struct _IOTimerDescriptor */
-    
-    iotimer_callback *callback;
-    void *data;
+	void *iotimer; /* struct _IOTimerDescriptor */
+	
+	iotimer_callback *callback;
+	void *data;
 };
 
 struct IOTimerDescriptor *iotimer_create(struct timeval *timeout);

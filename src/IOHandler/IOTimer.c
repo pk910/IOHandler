@@ -32,10 +32,10 @@ struct _IOTimerDescriptor *iotimer_sorted_descriptors;
 
 struct IOTimerDescriptor *iotimer_create(struct timeval *timeout) {
 	struct IOTimerDescriptor *descriptor = calloc(1, sizeof(*descriptor));
-    if(!descriptor) {
-        iolog_trigger(IOLOG_ERROR, "could not allocate memory for IOTimerDescriptor in %s:%d", __FILE__, __LINE__);
-        return NULL;
-    }
+	if(!descriptor) {
+		iolog_trigger(IOLOG_ERROR, "could not allocate memory for IOTimerDescriptor in %s:%d", __FILE__, __LINE__);
+		return NULL;
+	}
 	struct _IOTimerDescriptor *timer = _create_timer(timeout);
 	if(!timer) {
 		free(descriptor);
@@ -117,10 +117,10 @@ void _init_timers() {
 
 struct _IOTimerDescriptor *_create_timer(struct timeval *timeout) {
 	struct _IOTimerDescriptor *timer = calloc(1, sizeof(*timer));
-    if(!timer) {
-        iolog_trigger(IOLOG_ERROR, "could not allocate memory for _IOTimerDescriptor in %s:%d", __FILE__, __LINE__);
-        return NULL;
-    }
+	if(!timer) {
+		iolog_trigger(IOLOG_ERROR, "could not allocate memory for _IOTimerDescriptor in %s:%d", __FILE__, __LINE__);
+		return NULL;
+	}
 	if(timeout) {
 		timer->timeout = *timeout;
 		_rearrange_timer(timer);
