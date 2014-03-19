@@ -51,12 +51,37 @@ struct IOTimerDescriptor *iotimer_create(struct timeval *timeout) {
 void iotimer_start(struct IOTimerDescriptor *descriptor) {
 	struct _IOTimerDescriptor *timer = descriptor->iotimer;
 	if(timer == NULL) {
-		iolog_trigger(IOLOG_WARNING, "called iotimer_set_autoreload for destroyed IOTimerDescriptor in %s:%d", __FILE__, __LINE__);
+		iolog_trigger(IOLOG_WARNING, "called iotimer_start for destroyed IOTimerDescriptor in %s:%d", __FILE__, __LINE__);
 		return;
 	}
 	timer->flags |= IOTIMERFLAG_ACTIVE;
-	if(!(timer->flags & IOTIMERFLAG_IN_LIST))
-		_trigger_timer(timer);
+	_rearrange_timer(timer);
+}
+
+void iotimer_stop(struct IOTimerDescriptor *descriptor) {
+	struct _IOTimerDescriptor *timer = descriptor->iotimer;
+	if(timer == NULL) {
+		iolog_trigger(IOLOG_WARNING, "called iotimer_stop for destroyed IOTimerDescriptor in %s:%d", __FILE__, __LINE__);
+		return;
+	}
+	timer->flags &= ~IOTIMERFLAG_ACTIVE;
+	if((timer->flags & IOTIMERFLAG_PERSISTENT)) {
+		timer->flags &= ~IOTIMERFLAG_ACTIVE;
+		_rearrange_timer(timer);
+	} else
+		iotimer_destroy(descriptor);
+}
+
+int iotimer_state(struct IOTimerDescriptor *descriptor) {
+	struct _IOTimerDescriptor *timer = descriptor->iotimer;
+	if(timer == NULL) {
+		iolog_trigger(IOLOG_WARNING, "called iotimer_state for destroyed IOTimerDescriptor in %s:%d", __FILE__, __LINE__);
+		return 0;
+	}
+	if((timer->flags & IOTIMERFLAG_ACTIVE))
+		return 1;
+	else
+		return 0;
 }
 
 void iotimer_set_autoreload(struct IOTimerDescriptor *descriptor, struct timeval *autoreload) {
@@ -69,7 +94,7 @@ void iotimer_set_autoreload(struct IOTimerDescriptor *descriptor, struct timeval
 		timer->flags |= IOTIMERFLAG_PERIODIC;
 		timer->autoreload = *autoreload;
 		
-		if(!(timer->flags & IOTIMERFLAG_IN_LIST)) {
+		if(timer->timeout.tv_sec == 0 && timer->timeout.tv_usec == 0) {
 			struct timeval now;
 			gettimeofday(&now, NULL);
 			timer->timeout = now;
@@ -77,6 +102,25 @@ void iotimer_set_autoreload(struct IOTimerDescriptor *descriptor, struct timeval
 		}
 	} else {
 		timer->flags &= ~IOTIMERFLAG_PERIODIC;
+	}
+}
+
+struct timeval iotimer_get_autoreload(struct IOTimerDescriptor *descriptor) {
+	struct _IOTimerDescriptor *timer = descriptor->iotimer;
+	if(timer == NULL) {
+		iolog_trigger(IOLOG_WARNING, "called iotimer_get_autoreload for destroyed IOTimerDescriptor in %s:%d", __FILE__, __LINE__);
+		struct timeval tout;
+		tout.tv_sec = 0;
+		tout.tv_usec = 0;
+		return tout;
+	}
+	if((timer->flags & IOTIMERFLAG_PERIODIC))
+		return timer->autoreload;
+	else {
+		struct timeval tout;
+		tout.tv_sec = 0;
+		tout.tv_usec = 0;
+		return tout;
 	}
 }
 
@@ -94,8 +138,32 @@ void iotimer_set_timeout(struct IOTimerDescriptor *descriptor, struct timeval *t
 	_rearrange_timer(timer);
 }
 
+struct timeval iotimer_get_timeout(struct IOTimerDescriptor *descriptor) {
+	struct _IOTimerDescriptor *timer = descriptor->iotimer;
+	if(timer == NULL) {
+		iolog_trigger(IOLOG_WARNING, "called iotimer_get_timeout for destroyed IOTimerDescriptor in %s:%d", __FILE__, __LINE__);
+		struct timeval tout;
+		tout.tv_sec = 0;
+		tout.tv_usec = 0;
+		return tout;
+	}
+	return timer->timeout;
+}
+
 void iotimer_set_callback(struct IOTimerDescriptor *descriptor, iotimer_callback *callback) {
 	descriptor->callback = callback;
+}
+
+void iotimer_set_persistent(struct IOTimerDescriptor *descriptor, int persistent) {
+	struct _IOTimerDescriptor *timer = descriptor->iotimer;
+	if(timer == NULL) {
+		iolog_trigger(IOLOG_WARNING, "called iotimer_set_persistent for destroyed IOTimerDescriptor in %s:%d", __FILE__, __LINE__);
+		return;
+	}
+	if(persistent)
+		timer->flags |= IOTIMERFLAG_PERSISTENT;
+	else
+		timer->flags &= ~IOTIMERFLAG_PERSISTENT;
 }
 
 void iotimer_destroy(struct IOTimerDescriptor *descriptor) {
@@ -121,10 +189,8 @@ struct _IOTimerDescriptor *_create_timer(struct timeval *timeout) {
 		iolog_trigger(IOLOG_ERROR, "could not allocate memory for _IOTimerDescriptor in %s:%d", __FILE__, __LINE__);
 		return NULL;
 	}
-	if(timeout) {
+	if(timeout)
 		timer->timeout = *timeout;
-		_rearrange_timer(timer);
-	}
 	return timer;
 }
 
@@ -136,7 +202,10 @@ static void _rearrange_timer(struct _IOTimerDescriptor *timer) {
 			timer->prev->next = timer->next;
 		if(timer->next != NULL)
 			timer->next->prev = timer->prev;
+		timer->flags &= ~IOTIMERFLAG_IN_LIST;
 	}
+	if(!(timer->flags & IOTIMERFLAG_ACTIVE))
+		return;
 	struct _IOTimerDescriptor *ctimer;
 	for(ctimer = iotimer_sorted_descriptors; ctimer; ctimer = ctimer->next) {
 		if(timeval_is_bigger(ctimer->timeout, timer->timeout)) {
@@ -184,32 +253,32 @@ static void _autoreload_timer(struct _IOTimerDescriptor *timer) {
 
 void _trigger_timer() {
 	struct timeval now;
-	_trigger_timer_start:
-	gettimeofday(&now, NULL);
-	
-	struct _IOTimerDescriptor *timer = iotimer_sorted_descriptors;
-	if(!timer || timeval_is_bigger(timer->timeout, now)) {
-		return;
+	struct _IOTimerDescriptor *timer;
+	while(iotimer_sorted_descriptors) {
+		gettimeofday(&now, NULL);
+		
+		timer = iotimer_sorted_descriptors;
+		if(timeval_is_bigger(timer->timeout, now))
+			break;
+		
+		iotimer_sorted_descriptors = timer->next;
+		if(timer->next != NULL)
+			timer->next->prev = timer->prev;
+		timer->flags &= ~IOTIMERFLAG_IN_LIST;
+		
+		if((timer->flags & IOTIMERFLAG_PERIODIC))
+			_autoreload_timer(timer);
+		
+		if(timer->flags & IOTIMERFLAG_PARENT_PUBLIC) {
+			struct IOTimerDescriptor *descriptor = timer->parent;
+			if(descriptor->callback)
+				descriptor->callback(descriptor);
+			if(!(timer->flags & IOTIMERFLAG_PERIODIC))
+				iotimer_destroy(descriptor);
+		} else {
+			if(!(timer->flags & IOTIMERFLAG_PERIODIC))
+				_destroy_timer(timer);
+		}
 	}
-	iotimer_sorted_descriptors = timer->next;
-	if(timer->next != NULL)
-		timer->next->prev = timer->prev;
-	timer->flags &= ~IOTIMERFLAG_IN_LIST;
-	
-	if((timer->flags & IOTIMERFLAG_PERIODIC))
-		_autoreload_timer(timer);
-	
-	if(timer->flags & IOTIMERFLAG_PARENT_PUBLIC) {
-		struct IOTimerDescriptor *descriptor = timer->parent;
-		if(descriptor->callback)
-			descriptor->callback(descriptor);
-		if(!(timer->flags & IOTIMERFLAG_PERIODIC))
-			iotimer_destroy(descriptor);
-	} else {
-		if(!(timer->flags & IOTIMERFLAG_PERIODIC))
-			_destroy_timer(timer);
-	}
-	
-	goto _trigger_timer_start;
 }
 

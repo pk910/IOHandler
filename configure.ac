@@ -74,6 +74,7 @@ AC_CONFIG_FILES([
   src/IOHandler_test/client_ssl/Makefile
   src/IOHandler_test/server_ssl/Makefile
   src/IOHandler_test/timer/Makefile
+  src/IOHandler_test/timer++/Makefile
   src/IOHandler_test/resolv/Makefile
 ])
 AC_OUTPUT

@@ -1,0 +1,7 @@
+.deps
+.libs
+*.o
+*.exe
+iotest
+Makefile
+Makefile.in

@@ -27,6 +27,7 @@
 #define IOTIMERFLAG_IN_LIST        0x04
 #define IOTIMERFLAG_PARENT_PUBLIC  0x08
 #define IOTIMERFLAG_PARENT_SOCKET  0x10
+#define IOTIMERFLAG_PERSISTENT     0x20
 
 struct _IOTimerDescriptor;
 
@@ -63,9 +64,14 @@ struct IOTimerDescriptor {
 
 struct IOTimerDescriptor *iotimer_create(struct timeval *timeout);
 void iotimer_start(struct IOTimerDescriptor *iotimer);
+void iotimer_stop(struct IOTimerDescriptor *iotimer);
+int iotimer_state(struct IOTimerDescriptor *iotimer);
 void iotimer_set_autoreload(struct IOTimerDescriptor *iotimer, struct timeval *autoreload);
+struct timeval iotimer_get_autoreload(struct IOTimerDescriptor *iotimer);
 void iotimer_set_timeout(struct IOTimerDescriptor *iotimer, struct timeval *timeout);
+struct timeval iotimer_get_timeout(struct IOTimerDescriptor *iotimer);
 void iotimer_set_callback(struct IOTimerDescriptor *iotimer, iotimer_callback *callback);
+void iotimer_set_persistent(struct IOTimerDescriptor *iotimer, int persistent);
 void iotimer_destroy(struct IOTimerDescriptor *iotimer);
 
 #endif
