@@ -67,6 +67,8 @@ static LRESULT CALLBACK engine_win32_wndproc(HWND hWnd, UINT uMsg, WPARAM wParam
 			return 0;
 		case IDT_SOCKET:
 			iosock = engine_win32_get_iosock(wParam);
+			if(!iosock)
+				return 0;
 			events = WSAGETSELECTEVENT(lParam);
 			
 			if((events & FD_CONNECT)) {
