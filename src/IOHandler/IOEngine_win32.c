@@ -22,10 +22,12 @@
 #include "IOTimer.h"
 
 #ifdef WIN32
-
+#ifdef _WIN32_WINNT
+#undef _WIN32_WINNT
+#endif
 #define _WIN32_WINNT 0x501
-#include <windows.h>
 #include <winsock2.h>
+#include <windows.h>
 
 /* This is massively kludgy.  Unfortunately, the only performant I/O
  * multiplexer with halfway decent semantics under Windows is

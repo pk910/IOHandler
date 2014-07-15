@@ -26,9 +26,12 @@
 #include <string.h>
 #include <stdio.h>
 #ifdef WIN32
+#ifdef _WIN32_WINNT
+#undef _WIN32_WINNT
+#endif
 #define _WIN32_WINNT 0x501
-#include <windows.h>
 #include <winsock2.h>
+#include <windows.h>
 #elif defined HAVE_SYS_SELECT_H
 #include <sys/select.h>
 #endif
