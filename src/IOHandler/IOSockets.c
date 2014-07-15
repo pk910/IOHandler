@@ -636,6 +636,9 @@ struct _IOSocket *iosocket_accept_client(struct _IOSocket *iosock) {
 		new_iosock->socket_flags |= IOSOCKETFLAG_SSLSOCKET;
 		
 		iossl_client_accepted(iosock, new_iosock);
+	} else {
+		//initialize readbuf
+		iosocket_increase_buffer(&iosock->readbuf, 1024);
 	}
 	
 	iosocket_activate(new_iosock);
@@ -999,12 +1002,16 @@ void iosocket_events_callback(struct _IOSocket *iosock, int readable, int writea
 			iosocketevents_callback_retry_read:
 			if((readable && ssl_rehandshake == 0) || ssl_rehandshake == 1) {
 				int bytes;
-				if(iosock->readbuf.buflen - iosock->readbuf.bufpos >= 128) {
+				if(iosock->readbuf.buflen - iosock->readbuf.bufpos <= 128) {
 					int addsize;
 					if(iosock->readbuf.buflen >= 2048)
 						addsize = 1024;
 					else
 						addsize = iosock->readbuf.buflen;
+					if(addsize == 0) {
+						iolog_trigger(IOLOG_WARNING, "readbuf length is 0 when trying to read from fd %d", iosock->fd);
+						addsize = 512;
+					}
 					iosocket_increase_buffer(&iosock->readbuf, iosock->readbuf.buflen + addsize);
 				}
 				if((iosock->socket_flags & IOSOCKETFLAG_SSLSOCKET))
