@@ -87,6 +87,9 @@ extern struct _IOSocket *iosocket_last;
 #define IOSOCKETFLAG_OVERRIDE_WANT_R  0x00100000
 #define IOSOCKETFLAG_OVERRIDE_WANT_W  0x00200000
 
+/* _IOSocket socket_flags */
+#define IOSOCKETFLAG_DYNAMIC_BIND     0x00400000
+
 /* Parent descriptors */
 #define IOSOCKETFLAG_PARENT_PUBLIC    0x10000000
 #define IOSOCKETFLAG_PARENT_DNSENGINE 0x20000000
@@ -173,9 +176,13 @@ enum IOSocketEventType {
 struct IOSocket {
 	void *iosocket;
 	
+	struct IODNSAddress *remoteaddr;
+	struct IODNSAddress *localaddr;
+	
 	enum IOSocketStatus status;
 	int listening : 1;
 	int ssl : 1;
+	int ipv6 : 1;
 	int parse_delimiter : 1;
 	int parse_empty : 1; /* parse "empty" lines (only if parse_delimiter is set) */
 	unsigned char delimiters[IOSOCKET_PARSE_DELIMITERS_COUNT];
@@ -205,9 +212,6 @@ void iosocket_write(struct IOSocket *iosocket, const char *line);
 void iosocket_send(struct IOSocket *iosocket, const char *data, size_t datalen);
 void iosocket_printf(struct IOSocket *iosocket, const char *text, ...);
 void iosocket_close(struct IOSocket *iosocket);
-
-struct IODNSAddress *iosocket_get_remote_addr(struct IOSocket *iosocket);
-struct IODNSAddress *iosocket_get_local_addr(struct IOSocket *iosocket);
 
 #endif
 #endif

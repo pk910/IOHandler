@@ -486,6 +486,29 @@ static void iosocket_prepare_fd(int sockfd) {
 	#endif
 }
 
+static void iosocket_update_parent(struct _IOSocket *iosock) {
+	if((iosock->socket_flags & IOSOCKETFLAG_PARENT_PUBLIC)) {
+		struct IOSocket *iosocket = iosock->parent;
+		iosocket->ipv6 = ((iosock->socket_flags & IOSOCKETFLAG_IPV6SOCKET) ? 1 : 0);
+		if(!(iosock->socket_flags & IOSOCKETFLAG_LISTENING))
+			iosocket->remoteaddr = &iosock->dest.addr;
+		iosocket->localaddr = &iosock->bind.addr;
+		if(iosock->bind.addr.addresslen && (iosock->socket_flags & IOSOCKETFLAG_DYNAMIC_BIND)) {
+			free(iosock->bind.addr.address);
+			iosock->bind.addr.addresslen = 0;
+		}
+		if(!iosock->bind.addr.addresslen) {
+			iosock->socket_flags |= IOSOCKETFLAG_DYNAMIC_BIND;
+			if(iosocket->ipv6)
+				iosock->bind.addr.addresslen = sizeof(struct sockaddr_in6);
+			else
+				iosock->bind.addr.addresslen = sizeof(struct sockaddr_in);
+			iosock->bind.addr.address = malloc(iosock->bind.addr.addresslen);
+			getsockname(iosock->fd, (struct sockaddr *)iosock->bind.addr.address, &iosock->bind.addr.addresslen);
+		}
+	}
+} 
+
 static void iosocket_connect_finish(struct _IOSocket *iosock) {
 	int sockfd;
 	if((iosock->socket_flags & IOSOCKETFLAG_IPV6SOCKET))
@@ -505,7 +528,7 @@ static void iosocket_connect_finish(struct _IOSocket *iosock) {
 		ip6->sin6_family = AF_INET6;
 		ip6->sin6_port = htons(iosock->port);
 		
-		if(iosock->bind.addr.addresslen) {
+		if(iosock->bind.addr.addresslen && !(iosock->socket_flags & IOSOCKETFLAG_DYNAMIC_BIND)) {
 			struct sockaddr_in6 *ip6bind = (void*) iosock->bind.addr.address;
 			ip6bind->sin6_family = AF_INET6;
 			ip6bind->sin6_port = htons(0);
@@ -517,7 +540,7 @@ static void iosocket_connect_finish(struct _IOSocket *iosock) {
 		ip4->sin_family = AF_INET;
 		ip4->sin_port = htons(iosock->port);
 		
-		if(iosock->bind.addr.addresslen) {
+		if(iosock->bind.addr.addresslen && !(iosock->socket_flags & IOSOCKETFLAG_DYNAMIC_BIND)) {
 			struct sockaddr_in *ip4bind = (void*) iosock->bind.addr.address;
 			ip4bind->sin_family = AF_INET;
 			ip4bind->sin_port = htons(0);
@@ -575,6 +598,7 @@ static void iosocket_listen_finish(struct _IOSocket *iosock) {
 	
 	listen(sockfd, 1);
 	iosock->fd = sockfd;
+	iosocket_update_parent(iosock);
 	
 	iosocket_activate(iosock);
 }
@@ -641,6 +665,7 @@ struct _IOSocket *iosocket_accept_client(struct _IOSocket *iosock) {
 		iosocket_increase_buffer(&iosock->readbuf, 1024);
 	}
 	
+	iosocket_update_parent(new_iosock);
 	iosocket_activate(new_iosock);
 	return new_iosock;
 }
@@ -798,32 +823,6 @@ void iosocket_close(struct IOSocket *iosocket) {
 	iosocket->iosocket = NULL;
 	iosocket->status = IOSOCKET_CLOSED;
 	iogc_add(iosocket);
-}
-
-struct IODNSAddress *iosocket_get_remote_addr(struct IOSocket *iosocket) {
-	struct _IOSocket *iosock = iosocket->iosocket;
-	if(iosock == NULL) {
-		iolog_trigger(IOLOG_WARNING, "called iosocket_get_remote_addr for destroyed IOSocket in %s:%d", __FILE__, __LINE__);
-		return NULL;
-	}
-	if(iosock->socket_flags & IOSOCKETFLAG_PENDING_DESTDNS)
-		return NULL;
-	if(!iosock->dest.addr.addresslen)
-		return NULL;
-	return &iosock->dest.addr;
-}
-
-struct IODNSAddress *iosocket_get_local_addr(struct IOSocket *iosocket) {
-	struct _IOSocket *iosock = iosocket->iosocket;
-	if(iosock == NULL) {
-		iolog_trigger(IOLOG_WARNING, "called iosocket_get_local_addr for destroyed IOSocket in %s:%d", __FILE__, __LINE__);
-		return NULL;
-	}
-	if(iosock->socket_flags & IOSOCKETFLAG_PENDING_BINDDNS)
-		return NULL;
-	if(!iosock->bind.addr.addresslen)
-		return NULL;
-	return &iosock->bind.addr;
 }
 
 static int iosocket_try_write(struct _IOSocket *iosock) {
@@ -1013,6 +1012,8 @@ void iosocket_events_callback(struct _IOSocket *iosock, int readable, int writea
 				
 				callback_event.type = IOSOCKETEVENT_CONNECTED;
 				engine->update(iosock);
+				
+				iosocket_update_parent(iosock);
 				
 				//initialize readbuf
 				iosocket_increase_buffer(&iosock->readbuf, 1024);
