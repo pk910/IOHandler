@@ -800,6 +800,32 @@ void iosocket_close(struct IOSocket *iosocket) {
 	iogc_add(iosocket);
 }
 
+struct IODNSAddress *iosocket_get_remote_addr(struct IOSocket *iosocket) {
+	struct _IOSocket *iosock = iosocket->iosocket;
+	if(iosock == NULL) {
+		iolog_trigger(IOLOG_WARNING, "called iosocket_get_remote_addr for destroyed IOSocket in %s:%d", __FILE__, __LINE__);
+		return NULL;
+	}
+	if(iosock->socket_flags & IOSOCKETFLAG_PENDING_DESTDNS)
+		return NULL;
+	if(!iosock->dest.addr.addresslen)
+		return NULL;
+	return &iosock->dest.addr;
+}
+
+struct IODNSAddress *iosocket_get_local_addr(struct IOSocket *iosocket) {
+	struct _IOSocket *iosock = iosocket->iosocket;
+	if(iosock == NULL) {
+		iolog_trigger(IOLOG_WARNING, "called iosocket_get_local_addr for destroyed IOSocket in %s:%d", __FILE__, __LINE__);
+		return NULL;
+	}
+	if(iosock->socket_flags & IOSOCKETFLAG_PENDING_BINDDNS)
+		return NULL;
+	if(!iosock->bind.addr.addresslen)
+		return NULL;
+	return &iosock->bind.addr;
+}
+
 static int iosocket_try_write(struct _IOSocket *iosock) {
 	if(!iosock->writebuf.bufpos && !(iosock->socket_flags & IOSOCKETFLAG_SSL_WRITEHS)) 
 		return 0;
