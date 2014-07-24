@@ -152,6 +152,8 @@ struct IODNSQuery *iodns_getaddrinfo(char *hostname, int records, iodns_callback
 struct IODNSQuery *iodns_getnameinfo(const struct sockaddr *addr, size_t addrlen, iodns_callback *callback, void *arg);
 void iodns_abort(struct IODNSQuery *query);
 
+int iodns_print_address(struct IODNSAddress *addr, int ipv6, char *buffer, int length);
+
 void iodns_free_result(struct IODNSResult *result);
 
 #endif

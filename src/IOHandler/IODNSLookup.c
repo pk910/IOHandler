@@ -21,6 +21,23 @@
 #include "IOLog.h"
 #include "IOSockets.h"
 
+#ifdef WIN32
+#ifdef _WIN32_WINNT
+#undef _WIN32_WINNT
+#endif
+#define _WIN32_WINNT 0x501
+#include <winsock2.h>
+#include <windows.h>
+#include <ws2tcpip.h>
+#else
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <netinet/ip.h> 
+#include <arpa/inet.h>
+#include <unistd.h>
+#include <fcntl.h>
+#endif
+
 #include <string.h>
 
 struct _IODNSQuery *iodnsquery_first = NULL;
@@ -209,6 +226,23 @@ void iodns_abort(struct IODNSQuery *descriptor) {
 	}
 	
 	_stop_dnsquery(query);
+}
+
+int iodns_print_address(struct IODNSAddress *address, int ipv6, char *buffer, int length) {
+	int af;
+	void *addr;
+	if(ipv6) {
+		af = AF_INET6;
+		addr = (void *)(&((struct sockaddr_in6 *)address->address)->sin6_addr);
+	} else {
+		af = AF_INET;
+		addr = (void *)(&((struct sockaddr_in *)address->address)->sin_addr);
+	}
+	buffer = inet_ntop(af, addr, buffer, length);
+	if(!buffer)
+		return 0;
+	else
+		return strlen(buffer);
 }
 
 void iodns_free_result(struct IODNSResult *result) {
