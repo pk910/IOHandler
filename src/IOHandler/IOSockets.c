@@ -504,7 +504,7 @@ static void iosocket_update_parent(struct _IOSocket *iosock) {
 			else
 				iosock->bind.addr.addresslen = sizeof(struct sockaddr_in);
 			iosock->bind.addr.address = malloc(iosock->bind.addr.addresslen);
-			getsockname(iosock->fd, (struct sockaddr *)iosock->bind.addr.address, &iosock->bind.addr.addresslen);
+			getsockname(iosock->fd, (struct sockaddr *)iosock->bind.addr.address, (socklen_t *)&iosock->bind.addr.addresslen);
 		}
 	}
 } 

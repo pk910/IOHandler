@@ -6,6 +6,7 @@
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  * 
+ * 
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
@@ -37,6 +38,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #endif
+#include "compat/inet.h"
 
 #include <string.h>
 
@@ -238,7 +240,7 @@ int iodns_print_address(struct IODNSAddress *address, int ipv6, char *buffer, in
 		af = AF_INET;
 		addr = (void *)(&((struct sockaddr_in *)address->address)->sin_addr);
 	}
-	buffer = inet_ntop(af, addr, buffer, length);
+	buffer = (char*) inet_ntop(af, addr, buffer, length);
 	if(!buffer)
 		return 0;
 	else
