@@ -47,7 +47,7 @@
 #include <stdarg.h>
 
 #ifndef EWOULDBLOCK
-#define EWOULDBLOCK EAGAIN
+#define EWOULDBLOCK WSAEWOULDBLOCK
 #endif
 
 struct _IOSocket *iosocket_first = NULL;
@@ -825,6 +825,32 @@ void iosocket_close(struct IOSocket *iosocket) {
 	iogc_add(iosocket);
 }
 
+struct IODNSAddress *iosocket_get_remote_addr(struct IOSocket *iosocket) {
+	struct _IOSocket *iosock = iosocket->iosocket;
+	if(iosock == NULL) {
+		iolog_trigger(IOLOG_WARNING, "called iosocket_get_remote_addr for destroyed IOSocket in %s:%d", __FILE__, __LINE__);
+		return NULL;
+	}
+	if(iosock->socket_flags & IOSOCKETFLAG_PENDING_DESTDNS)
+		return NULL;
+	if(!iosock->dest.addr.addresslen)
+		return NULL;
+	return &iosock->dest.addr;
+}
+
+struct IODNSAddress *iosocket_get_local_addr(struct IOSocket *iosocket) {
+	struct _IOSocket *iosock = iosocket->iosocket;
+	if(iosock == NULL) {
+		iolog_trigger(IOLOG_WARNING, "called iosocket_get_local_addr for destroyed IOSocket in %s:%d", __FILE__, __LINE__);
+		return NULL;
+	}
+	if(iosock->socket_flags & IOSOCKETFLAG_PENDING_BINDDNS)
+		return NULL;
+	if(!iosock->bind.addr.addresslen)
+		return NULL;
+	return &iosock->bind.addr;
+}
+
 static int iosocket_try_write(struct _IOSocket *iosock) {
 	if(!iosock->writebuf.bufpos && !(iosock->socket_flags & IOSOCKETFLAG_SSL_WRITEHS)) 
 		return 0;
@@ -1047,13 +1073,19 @@ void iosocket_events_callback(struct _IOSocket *iosock, int readable, int writea
 					bytes = recv(iosock->fd, iosock->readbuf.buffer + iosock->readbuf.bufpos, iosock->readbuf.buflen - iosock->readbuf.bufpos, 0);
 				
 				if(bytes <= 0) {
+					int errcode;
+					#ifdef WIN32
+					errcode = WSAGetLastError();
+					#else
+					errcode = errno;
+					#endif
 					if((iosock->socket_flags & (IOSOCKETFLAG_SSLSOCKET | IOSOCKETFLAG_SSL_READHS)) == (IOSOCKETFLAG_SSLSOCKET | IOSOCKETFLAG_SSL_READHS)) {
 						ssl_rehandshake = 1;
-					} else if (errno != EAGAIN || errno != EWOULDBLOCK) {
+					} else if (errcode != EAGAIN && errcode != EWOULDBLOCK) {
 						iosock->socket_flags |= IOSOCKETFLAG_DEAD;
 						
 						callback_event.type = IOSOCKETEVENT_CLOSED;
-						callback_event.data.errid = errno;
+						callback_event.data.errid = errcode;
 					}
 				} else {
 					int i;

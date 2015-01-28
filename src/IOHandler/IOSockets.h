@@ -213,5 +213,8 @@ void iosocket_send(struct IOSocket *iosocket, const char *data, size_t datalen);
 void iosocket_printf(struct IOSocket *iosocket, const char *text, ...);
 void iosocket_close(struct IOSocket *iosocket);
 
+struct IODNSAddress *iosocket_get_remote_addr(struct IOSocket *iosocket);
+struct IODNSAddress *iosocket_get_local_addr(struct IOSocket *iosocket);
+
 #endif
 #endif
